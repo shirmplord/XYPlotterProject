@@ -1,27 +1,19 @@
-#include <string>
-#include "Pen.cpp"
+#include "Parser.h"
 
-class Parser {
-public:
-	Parser();
-	~Parser();
-	void GetCode(std::string input);
-
-private:
-	std::string code;
-	enum command {
-		opening,
-		limitStatus,
-		newPen,
-		setPen,
-		setDim,
-		setLaser,
-		moveOrg,
-		move,
-	};
-};
-
-void Parser::GetInput(std::string input) {
+void Parser::Parse(std::string input) {
 	code = input;
+	std::string temp = "";
+	auto it = input.cbegin() + 1;
+	if (input[0] == 'M') {
+		do {
+			temp+=*it++;
+		} while (*it != ' ' && it != input.cend());
+		output = 'M' + temp;
+	} else if (input[0] == 'G') {
+		do {
+			temp+=*it++;
+		} while (*it != ' ' && it != input.cend());
+		output = 'G' + temp;
+	}
 	return;
 }

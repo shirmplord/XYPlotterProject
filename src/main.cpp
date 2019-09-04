@@ -20,7 +20,7 @@
 
 // TODO: insert other include files here
 #include <string>
-#include "Parser.cpp"
+#include "Parser.h"
 // TODO: insert other definitions and declarations here
 
 int main(void) {
@@ -40,10 +40,12 @@ int main(void) {
     // TODO: insert code here
     int ch;
     std::string GCode;
+    Parser parser;
     while(1) {
         if ((ch = Board_UARTGetChar()) != EOF) {
         	if (ch == 10) {
-        		Board_UARTPutSTR(GCode.c_str());
+        		parser.Parse(GCode);
+        		Board_UARTPutSTR(parser.output.c_str());
         		Board_UARTPutSTR("\r\n");
         		Board_UARTPutSTR("OK\r\n");
         		GCode = "";

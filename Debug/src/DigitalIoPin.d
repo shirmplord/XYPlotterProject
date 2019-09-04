@@ -1,5 +1,5 @@
-src/main.o src/main.d: ../src/main.cpp \
- C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_board_nxp_lpcxpresso_1549\inc/board.h \
+src/DigitalIoPin.o src/DigitalIoPin.d: ../src/DigitalIoPin.cpp \
+ ../src/DigitalIoPin.h \
  C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/chip.h \
  C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/lpc_types.h \
  C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/sys_config.h \
@@ -46,12 +46,9 @@ src/main.o src/main.d: ../src/main.cpp \
  C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/spi_15xx.h \
  C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/i2cm_15xx.h \
  C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/i2c_common_15xx.h \
- C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/i2cs_15xx.h \
- C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_board_nxp_lpcxpresso_1549\inc/board_api.h \
- C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/lpc_types.h \
- ../src/Parser.h
+ C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/i2cs_15xx.h
 
-C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_board_nxp_lpcxpresso_1549\inc/board.h:
+../src/DigitalIoPin.h:
 
 C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/chip.h:
 
@@ -146,9 +143,3 @@ C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/i2
 C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/i2c_common_15xx.h:
 
 C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/i2cs_15xx.h:
-
-C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_board_nxp_lpcxpresso_1549\inc/board_api.h:
-
-C:\Users\DELL\Documents\MCUXpressoIDE_11.0.0_2516\workspace\lpc_chip_15xx\inc/lpc_types.h:
-
-../src/Parser.h:

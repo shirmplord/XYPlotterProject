@@ -4,6 +4,9 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 CPP_SRCS += \
+../src/DigitalIoPin.cpp \
+../src/Parser.cpp \
+../src/Pen.cpp \
 ../src/cr_cpp_config.cpp \
 ../src/cr_startup_lpc15xx.cpp \
 ../src/main.cpp 
@@ -13,6 +16,9 @@ C_SRCS += \
 ../src/sysinit.c 
 
 OBJS += \
+./src/DigitalIoPin.o \
+./src/Parser.o \
+./src/Pen.o \
 ./src/cr_cpp_config.o \
 ./src/cr_startup_lpc15xx.o \
 ./src/crp.o \
@@ -20,6 +26,9 @@ OBJS += \
 ./src/sysinit.o 
 
 CPP_DEPS += \
+./src/DigitalIoPin.d \
+./src/Parser.d \
+./src/Pen.d \
 ./src/cr_cpp_config.d \
 ./src/cr_startup_lpc15xx.d \
 ./src/main.d 
