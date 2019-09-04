@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<infoList vendor="NXP">
+<info name="LPC1549" chip="LPC1549" connectscript="LPC15RunBootRomConnect.scp" flash_driver="LPC15xx_256K.cfx" match_id="0x0"  resetscript="LPC15RunBootRomReset.scp" stub="crt_emu_cm3_gen">
+<chip>
+<name>LPC1549</name>
+<family>LPC15xx</family>
+<vendor>NXP (formerly Philips)</vendor>
+<reset board="None" core="Real" sys="Real"/>
+<clock changeable="TRUE" freq="12MHz" is_accurate="TRUE"/>
+<memory can_program="true" id="Flash" is_ro="true" type="Flash"/>
+<memory id="RAM" type="RAM"/>
+<memory id="Periph" is_volatile="true" type="Peripheral"/>
+<memoryInstance derived_from="Flash" id="MFlash256" location="0x0" size="0x40000"/>
+<memoryInstance derived_from="RAM" id="Ram0_16_32" location="0x2000000" size="0x8000"/>
+<memoryInstance derived_from="RAM" id="Ram2_4" location="0x2008000" size="0x1000"/>
+</chip>
+<processor>
+<name gcc_name="cortex-m3">Cortex-M3</name>
+<family>Cortex-M</family>
+</processor>
+</info>
+</infoList>
+
