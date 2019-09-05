@@ -8,12 +8,36 @@ void Parser::Parse(std::string input) {
 		do {
 			temp+=*it++;
 		} while (*it != ' ' && it != input.cend());
-		output = 'M' + temp;
+		//filter for command after M
+		switch (atoi(temp)) {
+		case 1:
+		case 2:
+		case 4:
+		case 5:
+		case 10:
+		case 11:
+			output = "M" + temp;
+			break;
+		default:
+			output = "invalid";
+			break;
+		}
 	} else if (input[0] == 'G') {
 		do {
 			temp+=*it++;
 		} while (*it != ' ' && it != input.cend());
-		output = 'G' + temp;
+		//filter for command after G
+		switch (atoi(temp)) {
+		case 1:
+		case 28:
+			output = 'G' + temp;
+			break;
+		default:
+			output = "invalid";
+			break;
+		}
+	} else {
+		output = "invalid code";
 	}
 	return;
 }

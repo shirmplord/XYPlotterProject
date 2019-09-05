@@ -41,6 +41,7 @@ int main(void) {
     int ch;
     std::string GCode;
     Parser parser;
+
     while(1) {
         if ((ch = Board_UARTGetChar()) != EOF) {
         	if (ch == 10) {
