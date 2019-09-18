@@ -56,6 +56,7 @@ static void calibrate(void *pvParameters) {
 	int xSize = 0;
 	int ySize = 0;
 	int backLS = 5;
+	int delay = 10;
 
 	laser.write(false);
 	pen.write(true);
@@ -65,18 +66,22 @@ static void calibrate(void *pvParameters) {
 	//LEFT until limit
 	while (ls4.read()==false){
 		motor('L');
+		vTaskDelay(delay);
 	}
 	//back-up to not hit the limit switch
 	for(int i=0; i<backLS; i++){
 		motor('R');
+		vTaskDelay(delay);
 	}
 	//UP until limit
 	while(ls1.read()==false){
 		motor('U');
+		vTaskDelay(delay);
 	}
 	//back-up to not hit the limit switch
 	for(int i=0; i<backLS; i++){
 		motor('D');
+		vTaskDelay(delay);
 	}
 
 //AT THE TOP LEFT CORNER
@@ -85,41 +90,49 @@ static void calibrate(void *pvParameters) {
 	while(ls3.read()==false){
 		topNum++;
 		motor('R');
+		vTaskDelay(delay);
 	}
 	//back-up to not hit the limit switch
 	for(int i=0; i<backLS; i++){
 		topNum--;
 		motor('L');
+		vTaskDelay(delay);
 	}
 	//counting DOWN till limit
 	while(ls2.read()==false){
 		rightNum++;
 		motor('D');
+		vTaskDelay(delay);
 	}
 	//back-up to not hit the limit switch
 	for(int i=0; i<backLS; i++){
 		rightNum--;
 		motor('U');
+		vTaskDelay(delay);
 	}
 	//counting LEFT till limit
 	while(ls4.read()==false){
 		bottomNum++;
 		motor('L');
+		vTaskDelay(delay);
 	}
 	//back-up to not hit the limit switch
 	for(int i=0; i<backLS; i++){
 		bottomNum--;
 		motor('R');
+		vTaskDelay(delay);
 	}
 	//counting UP till limit
 	while(ls1.read()==false){
 		leftNum++;
 		motor('U');
+		vTaskDelay(delay);
 	}
 	//back-up to not hit the limit switch
 	for(int i=0; i<backLS; i++){
 		leftNum--;
 		motor('D');
+		vTaskDelay(delay);
 	}
 
 //ENDS UP IN TOP LEFT CORNER
@@ -181,7 +194,6 @@ void motor(char direction){
 	DigitalIoPin xMotor(0, 27, DigitalIoPin::output, true);
 	DigitalIoPin yDir(1, 0, DigitalIoPin::output, true); //left-right
 	DigitalIoPin yMotor(0, 24, DigitalIoPin::output, true);
-	int delay = 10;
 
 		if (direction == 'R'){
 			yMotor.write(false);
@@ -203,5 +215,4 @@ void motor(char direction){
 			xDir.write(false);
 			xMotor.write(true);
 		}
-	vTaskDelay(delay);
 }
