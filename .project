@@ -5,6 +5,7 @@
 	<projects>
 		<project>lpc_board_nxp_lpcxpresso_1549</project>
 		<project>lpc_chip_15xx</project>
+		<project>FreeRTOS</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

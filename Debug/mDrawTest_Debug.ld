@@ -6,7 +6,7 @@
  * Generated linker script file for LPC1549
  * Created from linkscript.ldt by FMCreateLinkLibraries
  * Using Freemarker v2.3.23
- * MCUXpresso IDE v11.0.0 [Build 2516] [2019-06-05] on Sep 4, 2019 4:34:19 PM
+ * MCUXpresso IDE v11.0.1 [Build 2563] [2019-09-01] on 18-Sep-2019 12:21:41
  */
 
 INCLUDE "mDrawTest_Debug_library.ld"
@@ -132,6 +132,9 @@ SECTIONS
        _data = . ;
        *(vtable)
        *(.ramfunc*)
+       KEEP(*(CodeQuickAccess))
+       KEEP(*(DataQuickAccess))
+       *(RamFunction)
        *(.data*)
        . = ALIGN(4) ;
        _edata = . ;

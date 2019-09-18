@@ -7,7 +7,8 @@
 <booleanAttribute key="com.crt.ctrlcenter.crtInit" value="true"/>
 <stringAttribute key="com.crt.ctrlcenter.currentWireType" value="SWD"/>
 <booleanAttribute key="com.crt.ctrlcenter.mainBreakIsHardware" value="true"/>
-<stringAttribute key="com.crt.ctrlcenter.serialNumber" value="LinkServerNXP SemiconductorsLPC-LINK2 CMSIS-DAP V5.224BSAUBQDQ"/>
+<booleanAttribute key="com.crt.ctrlcenter.saveState" value="true"/>
+<stringAttribute key="com.crt.ctrlcenter.serialNumber" value="LinkServerNXP SemiconductorsLPC-LINK2 CMSIS-DAP V5.224FRASBQPQ"/>
 <mapAttribute key="com.crt.ctrlcenter.symbolsGroupSettings"/>
 <intAttribute key="com.crt.ctrlcenter.version" value="6"/>
 <stringAttribute key="com.nxp.mcuxpresso.flash.base.address" value="0x0"/>
@@ -59,7 +60,7 @@
 <booleanAttribute key="org.eclipse.cdt.dsf.gdb.DEBUG_ON_FORK" value="false"/>
 <booleanAttribute key="org.eclipse.cdt.dsf.gdb.EXTERNAL_CONSOLE" value="false"/>
 <stringAttribute key="org.eclipse.cdt.dsf.gdb.GDB_INIT" value=""/>
-<booleanAttribute key="org.eclipse.cdt.dsf.gdb.NON_STOP" value="true"/>
+<booleanAttribute key="org.eclipse.cdt.dsf.gdb.NON_STOP" value="false"/>
 <booleanAttribute key="org.eclipse.cdt.dsf.gdb.REVERSE" value="false"/>
 <stringAttribute key="org.eclipse.cdt.dsf.gdb.REVERSE_MODE" value="UseSoftTrace"/>
 <stringAttribute key="org.eclipse.cdt.dsf.gdb.TRACEPOINT_MODE" value="TP_NORMAL_ONLY"/>

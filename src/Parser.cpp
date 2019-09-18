@@ -9,7 +9,7 @@ void Parser::Parse(std::string input) {
 			temp+=*it++;
 		} while (*it != ' ' && it != input.cend());
 		//filter for command after M
-		switch (atoi(temp)) {
+		switch (atoi(temp.c_str())) {
 		case 1:
 		case 2:
 		case 4:
@@ -27,7 +27,7 @@ void Parser::Parse(std::string input) {
 			temp+=*it++;
 		} while (*it != ' ' && it != input.cend());
 		//filter for command after G
-		switch (atoi(temp)) {
+		switch (atoi(temp.c_str())) {
 		case 1:
 		case 28:
 			output = 'G' + temp;
