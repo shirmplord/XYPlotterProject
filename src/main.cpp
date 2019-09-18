@@ -47,8 +47,10 @@ int main(void) {
         	if (ch == 10) {
         		parser.Parse(GCode);
         		Board_UARTPutSTR(parser.output.c_str());
-        		Board_UARTPutSTR("\r\n");
-        		Board_UARTPutSTR("OK\r\n");
+        		if (parser.output != "invalid code") {
+            		Board_UARTPutSTR("\r\n");
+            		Board_UARTPutSTR("OK\r\n");
+        		}
         		GCode = "";
         	}
         	else GCode += (char) ch;
