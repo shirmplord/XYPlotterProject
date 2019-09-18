@@ -1,3 +1,6 @@
 gthr-default.h:229:1:int __gthread_key_delete(__gthread_key_t)	16	static
 Parser.h:7:2:Parser::Parser()	16	static
-main.cpp:26:5:int main()	112	static
+main.cpp:33:13:void prvSetupHardware()	8	static
+main.cpp:43:13:void calibrate(void*)	168	static
+main.cpp:138:5:int main()	120	static
+main.cpp:179:6:void motor(char)	80	static

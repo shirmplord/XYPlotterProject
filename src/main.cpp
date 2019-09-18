@@ -19,9 +19,121 @@
 #include <cr_section_macros.h>
 
 // TODO: insert other include files here
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "semphr.h"
+#include "task.h"
 #include <string>
 #include "Parser.h"
+#include "DigitalIoPin.h"
+
+void motor(char);
+
+/* Sets up system hardware */
+static void prvSetupHardware(void)
+{
+	SystemCoreClockUpdate();
+	Board_Init();
+
+	/* Initial LED0 state is off */
+	Board_LED_Set(0, false);
+}
+
 // TODO: insert other definitions and declarations here
+static void calibrate(void *pvParameters) {
+    DigitalIoPin laser(0, 12, DigitalIoPin::output, true);	//laser
+	DigitalIoPin pen(0, 10, DigitalIoPin::output, true);	//pen
+
+    DigitalIoPin ls1(1, 3, DigitalIoPin::pullup, true);	//up
+	DigitalIoPin ls2(0, 0, DigitalIoPin::pullup, true);	//down
+	DigitalIoPin ls3(0, 29, DigitalIoPin::pullup, true);	//right
+	DigitalIoPin ls4(0, 9, DigitalIoPin::pullup, true); //left
+
+	int topNum = 0;
+	int rightNum = 0;
+	int bottomNum = 0;
+	int leftNum = 0;
+	int xSize = 0;
+	int ySize = 0;
+	int backLS = 5;
+
+	laser.write(false);
+	pen.write(true);
+	//Delay for laser to actually turn off
+	vTaskDelay(100);
+
+	//LEFT until limit
+	while (ls4.read()==false){
+		motor('L');
+	}
+	//back-up to not hit the limit switch
+	for(int i=0; i<backLS; i++){
+		motor('R');
+	}
+	//UP until limit
+	while(ls1.read()==false){
+		motor('U');
+	}
+	//back-up to not hit the limit switch
+	for(int i=0; i<backLS; i++){
+		motor('D');
+	}
+
+//AT THE TOP LEFT CORNER
+
+	//counting RIGHT till limit
+	while(ls3.read()==false){
+		topNum++;
+		motor('R');
+	}
+	//back-up to not hit the limit switch
+	for(int i=0; i<backLS; i++){
+		topNum--;
+		motor('L');
+	}
+	//counting DOWN till limit
+	while(ls2.read()==false){
+		rightNum++;
+		motor('D');
+	}
+	//back-up to not hit the limit switch
+	for(int i=0; i<backLS; i++){
+		rightNum--;
+		motor('U');
+	}
+	//counting LEFT till limit
+	while(ls4.read()==false){
+		bottomNum++;
+		motor('L');
+	}
+	//back-up to not hit the limit switch
+	for(int i=0; i<backLS; i++){
+		bottomNum--;
+		motor('R');
+	}
+	//counting UP till limit
+	while(ls1.read()==false){
+		leftNum++;
+		motor('U');
+	}
+	//back-up to not hit the limit switch
+	for(int i=0; i<backLS; i++){
+		leftNum--;
+		motor('D');
+	}
+
+//ENDS UP IN TOP LEFT CORNER
+
+	xSize = (topNum+bottomNum)/2;
+	ySize = (rightNum+leftNum)/2;
+
+	char buffer[10];
+	int n;
+	n=sprintf(buffer, "X: %d \r\n", xSize);
+	Board_UARTPutSTR(buffer);
+	n=sprintf(buffer, "Y: %d \r\n", ySize);
+	Board_UARTPutSTR(buffer);
+}
 
 int main(void) {
 
@@ -38,6 +150,13 @@ int main(void) {
 #endif
 
     // TODO: insert code here
+    prvSetupHardware();
+	xTaskCreate(calibrate, "calibrate",
+				configMINIMAL_STACK_SIZE + 128, NULL, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+	/* Start the scheduler */
+	vTaskStartScheduler();
+
     int ch;
     std::string GCode;
     Parser parser;
@@ -57,4 +176,34 @@ int main(void) {
         }
     }
     return 0 ;
+}
+
+void motor(char direction){
+	DigitalIoPin xDir(0, 28, DigitalIoPin::output, true); //down-up
+	DigitalIoPin xMotor(0, 27, DigitalIoPin::output, true);
+	DigitalIoPin yDir(1, 0, DigitalIoPin::output, true); //left-right
+	DigitalIoPin yMotor(0, 24, DigitalIoPin::output, true);
+	int delay = 10;
+
+		if (direction == 'R'){
+			yMotor.write(false);
+			yDir.write(false);
+			yMotor.write(true);
+		}
+		else if (direction == 'D'){
+			xMotor.write(false);
+			xDir.write(true);
+			xMotor.write(true);
+		}
+		else if (direction == 'L'){
+			yMotor.write(false);
+			yDir.write(true);
+			yMotor.write(true);
+		}
+		else if (direction == 'U'){
+			xMotor.write(false);
+			xDir.write(false);
+			xMotor.write(true);
+		}
+	vTaskDelay(delay);
 }
