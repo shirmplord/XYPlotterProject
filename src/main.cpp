@@ -27,6 +27,12 @@
 #include "Parser.h"
 #include "DigitalIoPin.h"
 
+/*Declaration of global variables*/
+volatile uint32_t RIT_count;		//counter for RITimer
+SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
+std::vector<DigitalIoPin> args;		//vector for the PINS
+
+
 void motor(char);
 
 extern "C" {
@@ -39,7 +45,6 @@ void RIT_IRQHandler(void){
 	if(RIT_count > 0) {
 		RIT_count--;
 		// do something useful here...
-		xSemaphoreGiveFromISR(goSignal, &xHigherPriorityWoken);
 	}
 	else {
 		Chip_RIT_Disable(LPC_RITIMER); // disable timer
@@ -197,6 +202,27 @@ static void calibrate(void *pvParameters) {
 	Board_UARTPutSTR(buffer);
 }
 
+static void vUARTCommTask(void *pvParameters) {
+    int ch;
+    std::string GCode;
+    Parser parser;
+
+	while (1) {
+		if ((ch = Board_UARTGetChar()) != EOF) {
+			if (ch == 10) {
+				std::string output(parser.Parse(GCode));
+				Board_UARTPutSTR(output.c_str());
+				if (output != "invalid code") {
+					Board_UARTPutSTR("\r\n");
+					Board_UARTPutSTR("OK\r\n");
+				}
+				GCode = "";
+			}
+			else GCode += (char) ch;
+		}
+	}
+}
+
 int main(void) {
 
 #if defined (__USE_LPCOPEN)
@@ -213,29 +239,24 @@ int main(void) {
 
     // TODO: insert code here
     prvSetupHardware();
+
+    /*Set up the global variables*/
+	sbRIT = xSemaphoreCreateBinary();
+
+    /*Create all tasks here*/
 	xTaskCreate(calibrate, "calibrate",
 				configMINIMAL_STACK_SIZE + 128, NULL, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
+
+	xTaskCreate(vUARTCommTask, "UART",
+			    configMINIMAL_STACK_SIZE + 128, NULL, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+
 	/* Start the scheduler */
 	vTaskStartScheduler();
 
-    int ch;
-    std::string GCode;
-    Parser parser;
-
     while(1) {
-        if ((ch = Board_UARTGetChar()) != EOF) {
-        	if (ch == 10) {
-        		parser.Parse(GCode);
-        		Board_UARTPutSTR(parser.output.c_str());
-        		if (parser.output != "invalid code") {
-            		Board_UARTPutSTR("\r\n");
-            		Board_UARTPutSTR("OK\r\n");
-        		}
-        		GCode = "";
-        	}
-        	else GCode += (char) ch;
-        }
+
     }
     return 0 ;
 }

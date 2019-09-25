@@ -6,7 +6,7 @@ class Parser {
 public:
 	Parser() {}
 	~Parser() {}
-	void Parse(std::string input);
+	std::string Parse(std::string input);
 	enum command {
 		opening,
 		limitStatus,
@@ -17,7 +17,6 @@ public:
 		moveOrg,
 		move,
 	};
-	std::string output;
 private:
 	std::string code;
 };

@@ -1,8 +1,9 @@
 #include "Parser.h"
 
-void Parser::Parse(std::string input) {
+std::string Parser::Parse(std::string input) {
 	code = input;
 	std::string temp = "";
+	std::string output ="";
 	auto it = input.cbegin() + 1;
 	if (input[0] == 'M') {
 		do {
@@ -39,5 +40,5 @@ void Parser::Parse(std::string input) {
 	} else {
 		output = "invalid code";
 	}
-	return;
+	return output;
 }
