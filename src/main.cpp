@@ -98,10 +98,10 @@ static void calibrate(void *pvParameters) {
     DigitalIoPin laser(0, 12, DigitalIoPin::output, true);	//laser
 	DigitalIoPin pen(0, 10, DigitalIoPin::output, true);	//pen
 
-    DigitalIoPin ls1(1, 3, DigitalIoPin::pullup, true);	//up
-	DigitalIoPin ls2(0, 0, DigitalIoPin::pullup, true);	//down
+    DigitalIoPin ls1(1, 3, DigitalIoPin::pullup, true);		//up
+	DigitalIoPin ls2(0, 0, DigitalIoPin::pullup, true);		//down
 	DigitalIoPin ls3(0, 29, DigitalIoPin::pullup, true);	//right
-	DigitalIoPin ls4(0, 9, DigitalIoPin::pullup, true); //left
+	DigitalIoPin ls4(0, 9, DigitalIoPin::pullup, true); 	//left
 
 	int topNum = 0;
 	int rightNum = 0;
@@ -240,8 +240,41 @@ int main(void) {
     // TODO: insert code here
     prvSetupHardware();
 
-    /*Set up the global variables*/
+    /*Set up the queue/semaphores*/
 	sbRIT = xSemaphoreCreateBinary();
+
+	/*Set up Pins*/
+    DigitalIoPin limSW1(1, 3, DigitalIoPin::pullup, true);		//up
+	DigitalIoPin limSW2(0, 0, DigitalIoPin::pullup, true);		//down
+	DigitalIoPin limSW3(0, 29, DigitalIoPin::pullup, true);		//right
+	DigitalIoPin limSW4(0, 9, DigitalIoPin::pullup, true); 		//left
+
+    DigitalIoPin laser(0, 12, DigitalIoPin::output, true);		//laser
+	DigitalIoPin pen(0, 10, DigitalIoPin::output, true);		//pen
+
+	DigitalIoPin xMotor(0, 24, DigitalIoPin::output, true);		//horizontal movement
+	DigitalIoPin xDir(1, 0, DigitalIoPin::output, true);		//horizontal direction
+	DigitalIoPin yMotor(0, 27, DigitalIoPin::output, true);		//vertical movement
+	DigitalIoPin yDir(0, 28, DigitalIoPin::output, true);		//vertical direction
+
+	DigitalIoPin SW1(0, 8, DigitalIoPin::pullup, true);
+	DigitalIoPin SW2(1, 6, DigitalIoPin::pullup, true);
+	DigitalIoPin SW3(1, 8, DigitalIoPin::pullup, true);
+
+	args.push_back(limSW1);
+	args.push_back(limSW2);
+	args.push_back(limSW3);
+	args.push_back(limSW4);
+	args.push_back(laser);
+	args.push_back(pen);
+	args.push_back(xMotor);
+	args.push_back(xDir);
+	args.push_back(yMotor);
+	args.push_back(yDir);
+	args.push_back(SW1);
+	args.push_back(SW2);
+	args.push_back(SW3);
+
 
     /*Create all tasks here*/
 	xTaskCreate(calibrate, "calibrate",
@@ -267,24 +300,24 @@ void motor(char direction){
 	DigitalIoPin yDir(1, 0, DigitalIoPin::output, true); //left-right
 	DigitalIoPin yMotor(0, 24, DigitalIoPin::output, true);
 
-		if (direction == 'R'){
-			yMotor.write(false);
-			yDir.write(false);
-			yMotor.write(true);
-		}
-		else if (direction == 'D'){
-			xMotor.write(false);
-			xDir.write(true);
-			xMotor.write(true);
-		}
-		else if (direction == 'L'){
-			yMotor.write(false);
-			yDir.write(true);
-			yMotor.write(true);
-		}
-		else if (direction == 'U'){
-			xMotor.write(false);
-			xDir.write(false);
-			xMotor.write(true);
-		}
+	if (direction == 'R'){
+		yMotor.write(false);
+		yDir.write(false);
+		yMotor.write(true);
+	}
+	else if (direction == 'D'){
+		xMotor.write(false);
+		xDir.write(true);
+		xMotor.write(true);
+	}
+	else if (direction == 'L'){
+		yMotor.write(false);
+		yDir.write(true);
+		yMotor.write(true);
+	}
+	else if (direction == 'U'){
+		xMotor.write(false);
+		xDir.write(false);
+		xMotor.write(true);
+	}
 }
