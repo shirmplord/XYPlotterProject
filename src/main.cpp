@@ -24,18 +24,40 @@
 #include "semphr.h"
 #include "task.h"
 #include <string>
+#include <cstring>
 #include "Parser.h"
 #include "DigitalIoPin.h"
+#include <vector>
+#include <cmath>
 
 /*Declaration of global variables*/
 volatile uint32_t RIT_count;		//counter for RITimer
+volatile bool vertical;
+bool caliLock = false;
+int xSize;
+int ySize;
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
+SemaphoreHandle_t xSignal = NULL;  	//signal for the motor to move in the X direction
+SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direction
+QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
 
 
-void motor(char);
+/*Declaration of data types*/
+struct Coordinates {
+	float currX;
+	float currY;
+	float tarX;
+	float tarY;
+	int stepsX;
+	int stepsY;
+};
 
+/*-------------------------------------------------------------------*/
+/*Functions declaration*/
+/*-------------------------------------------------------------------*/
 extern "C" {
+
 void RIT_IRQHandler(void){
 	// This used to check if a context switch is required
 	portBASE_TYPE xHigherPriorityWoken = pdFALSE;
@@ -45,6 +67,10 @@ void RIT_IRQHandler(void){
 	if(RIT_count > 0) {
 		RIT_count--;
 		// do something useful here...
+		if (vertical) {
+			xSemaphoreGiveFromISR(ySignal, &xHigherPriorityWoken);
+		} else
+			xSemaphoreGiveFromISR(xSignal, &xHigherPriorityWoken);
 	}
 	else {
 		Chip_RIT_Disable(LPC_RITIMER); // disable timer
@@ -54,6 +80,13 @@ void RIT_IRQHandler(void){
 	// End the ISR and (possibly) do a context switch
 	portEND_SWITCHING_ISR(xHigherPriorityWoken);
 }
+
+void vConfigureTimerForRunTimeStats( void ) {
+	Chip_SCT_Init(LPC_SCTSMALL1);
+	LPC_SCTSMALL1->CONFIG = SCT_CONFIG_32BIT_COUNTER;
+	LPC_SCTSMALL1->CTRL_U = SCT_CTRL_PRE_L(255) | SCT_CTRL_CLRCTR_L; // set prescaler to 256 (255 + 1), and start timer
+}
+
 }
 
 void RIT_start(int count, int us)
@@ -92,121 +125,71 @@ static void prvSetupHardware(void)
 	/* Initial LED0 state is off */
 	Board_LED_Set(0, false);
 }
+/*Plotting line with 0 < abs(slope) < 1 (x is running)*/
+void PlotLineLow(int x0, int y0, int x1, int y1) {
+	int delay = 1000;
+	int dx = x1 - x0;
+	int dy = y1 - y0;
+	if (dy < 0)
+		dy = -dy;
+	int D = 2*dy - dx;
 
-// TODO: insert other definitions and declarations here
-static void calibrate(void *pvParameters) {
-    DigitalIoPin laser(0, 12, DigitalIoPin::output, true);	//laser
-	DigitalIoPin pen(0, 10, DigitalIoPin::output, true);	//pen
+	for (int x = x0;x < x1; x++) {
+		vertical = false;
+		RIT_start(1, delay);
+		if (D > 0) {
+			vertical = true;
+			RIT_start(1,delay);
+			D = D - 2*dx;
+		}
+		D = D + 2*dy;
+	}
+}
+/*Plotting line with abs(slope) > 1 (y is running)*/
+void plotLineHigh(int x0, int y0, int x1, int y1) {
+	int delay = 1000;
+	int dx = x1 - x0;
+	int dy = y1 - y0;
+	if (dy < 0)
+		dx = -dx;
+	int D = 2*dx - dy;
 
-    DigitalIoPin ls1(1, 3, DigitalIoPin::pullup, true);	//up
-	DigitalIoPin ls2(0, 0, DigitalIoPin::pullup, true);	//down
-	DigitalIoPin ls3(0, 29, DigitalIoPin::pullup, true);	//right
-	DigitalIoPin ls4(0, 9, DigitalIoPin::pullup, true); //left
-
-	int topNum = 0;
-	int rightNum = 0;
-	int bottomNum = 0;
-	int leftNum = 0;
-	int xSize = 0;
-	int ySize = 0;
-	int backLS = 5;
-	int delay = 10;
-
-	laser.write(false);
-	pen.write(true);
-	//Delay for laser to actually turn off
-	vTaskDelay(100);
-
-	//LEFT until limit
-	while (ls4.read()==false){
-		motor('L');
-		vTaskDelay(delay);
+	for (int y = y0;y < y1; y++) {
+		vertical = true;
+		RIT_start(1, delay);
+		if (D > 0) {
+			vertical = false;
+			RIT_start(1,delay);
+			D = D - 2*dy;
+		}
+		D = D + 2*dx;
 	}
-	//back-up to not hit the limit switch
-	for(int i=0; i<backLS; i++){
-		motor('R');
-		vTaskDelay(delay);
-	}
-	//UP until limit
-	while(ls1.read()==false){
-		motor('U');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	for(int i=0; i<backLS; i++){
-		motor('D');
-		vTaskDelay(delay);
-	}
-
-//AT THE TOP LEFT CORNER
-
-	//counting RIGHT till limit
-	while(ls3.read()==false){
-		topNum++;
-		motor('R');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	for(int i=0; i<backLS; i++){
-		topNum--;
-		motor('L');
-		vTaskDelay(delay);
-	}
-	//counting DOWN till limit
-	while(ls2.read()==false){
-		rightNum++;
-		motor('D');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	for(int i=0; i<backLS; i++){
-		rightNum--;
-		motor('U');
-		vTaskDelay(delay);
-	}
-	//counting LEFT till limit
-	while(ls4.read()==false){
-		bottomNum++;
-		motor('L');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	for(int i=0; i<backLS; i++){
-		bottomNum--;
-		motor('R');
-		vTaskDelay(delay);
-	}
-	//counting UP till limit
-	while(ls1.read()==false){
-		leftNum++;
-		motor('U');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	for(int i=0; i<backLS; i++){
-		leftNum--;
-		motor('D');
-		vTaskDelay(delay);
-	}
-
-//ENDS UP IN TOP LEFT CORNER
-
-	xSize = (topNum+bottomNum)/2;
-	ySize = (rightNum+leftNum)/2;
-
-	char buffer[10];
-	int n;
-	n=sprintf(buffer, "X: %d \r\n", xSize);
-	Board_UARTPutSTR(buffer);
-	n=sprintf(buffer, "Y: %d \r\n", ySize);
-	Board_UARTPutSTR(buffer);
 }
 
+/*Selecting which case to plot*/
+void Plot(int x0, int y0, int x, int y) {
+	if (abs(y - y0) < abs(x - x0)) {
+		if (x < x0) {
+			PlotLineLow(x, y, x0, y0);
+		}
+		else PlotLineLow(x0, y0, x, y);
+	} else {
+		if (y < y0) {
+			plotLineHigh(x, y, x0, y0);
+		} else {
+			plotLineHigh(x0, y0, x, y);
+		}
+	}
+}
+/*-------------------------------------------------------------------*/
+/*Task declaration*/
+/*-------------------------------------------------------------------*/
 static void vUARTCommTask(void *pvParameters) {
     int ch;
     std::string GCode;
     Parser parser;
 
+	vTaskDelay(100);
 	while (1) {
 		if ((ch = Board_UARTGetChar()) != EOF) {
 			if (ch == 10) {
@@ -223,21 +206,319 @@ static void vUARTCommTask(void *pvParameters) {
 	}
 }
 
+static void vMotorXTask(void *pvParameters) {
+	//ls3 = 2
+	//ls4 = 3
+	//xMotor = 6
+	//xDir = 7
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	auto it = arr->begin();
+	bool signal = true;
+	vTaskDelay(100);
+
+	while(1) {
+		//normal movement used in the task
+		if (xSemaphoreTake(xSignal, portMAX_DELAY) == pdTRUE) {
+			if ((it+2)->read() == false && (it+3)->read() == false) {
+				/*LOOKING FOR CONDITION TO SELECT THE DIRECTION TO MOVE*/
+				(it+6)->write(signal);
+				signal = !signal;
+			}
+		}
+	}
+}
+
+static void vMotorYTask(void *pvParameters) {
+	//ls1 = 0
+	//ls2 = 1
+	//yMotor = 8
+	//yDir = 9
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	auto it = arr->begin();
+	bool signal = true;
+	vTaskDelay(100);
+
+	while(1) {
+		//normal movement used in the task
+		if (xSemaphoreTake(ySignal, portMAX_DELAY) == pdTRUE) {
+			if ((it)->read() == false && (it+1)->read() == false) {
+				/*LOOKING FOR CONDITION TO SELECT THE DIRECTION TO MOVE*/
+				(it+8)->write(signal);
+				signal = !signal;
+			}
+		}
+	}
+}
+
+static void vCalibrationTask(void *pvParameters) {
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+
+	auto it = arr->begin();
+	(it+4)->write(false);	//drive the laser to false
+	(it+5)->write(true);	//force the pen down
+	caliLock = false;
+	if (!caliLock) {
+		//ls1 = 0
+		//ls2 = 1
+		//ls3 = 2
+		//ls4 = 3
+		//laser = 4
+		//pen = 5
+		//xMotor = 6
+		//xDir = 7
+		//yMotor = 8
+		//yDir = 9
+
+		int topNum = 0;
+		int rightNum = 0;
+		int bottomNum = 0;
+		int leftNum = 0;
+		xSize = 0;
+		ySize = 0;
+//		int delay = 1000;
+
+		vTaskDelay(200);
+		//start checking the X+
+		(it+7)->write(true);
+		while ((it+3)->read()==false){
+			(it+6)->write(true);
+			vTaskDelay(1);
+			(it+6)->write(false);
+			vTaskDelay(1);
+		}
+		//border hit, time to move back
+		(it+7)->write(false);
+		while ((it+3)->read()==true){
+			(it+6)->write(true);
+			vTaskDelay(1);
+			(it+6)->write(false);
+			vTaskDelay(1);
+		}
+		//Keep going to Y-
+		(it+9)->write(false);
+		while(it->read()==false){
+			(it+8)->write(true);
+			vTaskDelay(1);
+			(it+8)->write(false);
+			vTaskDelay(1);
+		}
+		//border hit, time to move back
+		(it+9)->write(true);
+		while(it->read()==true){
+			(it+8)->write(true);
+			vTaskDelay(1);
+			(it+8)->write(false);
+			vTaskDelay(1);
+		}
+		/*--------------------------------------------------*/
+		/*Reached the XO corner
+		 * start running through the border
+		 * register the number of steps of each directions*/
+		/*--------------------------------------------------*/
+		//check the X-; count the horizontal steps
+		(it+7)->write(false);
+		while((it+2)->read()==false){
+			topNum++;
+			(it+6)->write(true);
+			vTaskDelay(1);
+			(it+6)->write(false);
+			vTaskDelay(1);
+		}
+		//back-up to not hit the limit switch
+		(it+7)->write(true);
+		while((it+2)->read()==true){
+			topNum--;
+			(it+6)->write(true);
+			vTaskDelay(1);
+			(it+6)->write(false);
+			vTaskDelay(1);
+		}
+		//check the Y+ direction, count the vertical limit
+		(it+9)->write(true);
+		while((it+1)->read()==false){
+			rightNum++;
+			(it+8)->write(true);
+			vTaskDelay(1);
+			(it+8)->write(false);
+			vTaskDelay(1);
+		}
+		//back-up to not hit the limit switch
+		(it+9)->write(false);
+		while((it+1)->read()==true){
+			rightNum--;
+			(it+8)->write(true);
+			vTaskDelay(1);
+			(it+8)->write(false);
+			vTaskDelay(1);
+		}
+		//check the X+
+		(it+7)->write(true);
+		while((it+3)->read()==false){
+			bottomNum++;
+			(it+6)->write(true);
+			vTaskDelay(1);
+			(it+6)->write(false);
+			vTaskDelay(1);
+		}
+		//back-up to not hit the limit switch
+		(it+7)->write(false);
+		while((it+3)->read()==true){
+			bottomNum--;
+			(it+6)->write(true);
+			vTaskDelay(1);
+			(it+6)->write(false);
+			vTaskDelay(1);
+		}
+		//checking the Y- direction
+		(it+9)->write(false);
+		while(it->read()==false){
+			leftNum++;
+			(it+8)->write(true);
+			vTaskDelay(1);
+			(it+8)->write(false);
+			vTaskDelay(1);
+		}
+		//back-up to not hit the limit switch
+		(it+9)->write(true);
+		while(it->read()==true){
+			leftNum--;
+			(it+8)->write(true);
+			vTaskDelay(1);
+			(it+8)->write(false);
+			vTaskDelay(1);
+		}
+		/*Finished calibration*/
+		/*Calculate the output and print for debug*/
+		ySize = (topNum+bottomNum)/2;
+		xSize = (rightNum+leftNum)/2;
+
+		char buffer[10];
+		sprintf(buffer, "X: %d \r\n", xSize);
+		Board_UARTPutSTR(buffer);
+		sprintf(buffer, "Y: %d \r\n", ySize);
+		Board_UARTPutSTR(buffer);
+		caliLock = true;
+	}
+}
+
+static void vControllerTask(void *pvParameters) {
+	//xDir = 7
+	//yDir = 9
+	Coordinates cmd;
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	auto it = arr->begin();
+	vTaskDelay(100);
+	//convert the value to steps;
+	//X size = 380, Y size = 310
+	float stepPerX = xSize/380;
+	float stepPerY = ySize/310;
+
+	while(1) {
+		/*Take command from a queue*/
+		if (xQueueReceive(xCmdQueue, &cmd, portMAX_DELAY) == pdTRUE) {
+			//calculate the current number of steps from the origin
+			float x,y;
+			//Extract the coordinate and calculate the number of steps needed
+			x = (cmd.tarX-cmd.currX) * stepPerX;
+			y = (cmd.tarY-cmd.currX) * stepPerY;
+			//set the direction of the motor based on the value of x and y
+			if (x>=0)
+				(it+7)->write(true);
+			else (it+7)->write(false);
+
+			if (y>=0)
+				(it+9)->write(true);
+			else (it+9)->write(false);
+
+			/*algorithm: Bresenham
+			 * - Determine either x or y is the running variable (the large of the 2)
+			 * - Based on the slope of the line (y-y0)/(x-x0),
+			 *   determine whether to increase the follow variable
+			 * - Call RIT_start accordingly
+			 * */
+			Plot(cmd.currX * stepPerX, cmd.currY * stepPerY, cmd.tarX * stepPerX, cmd.tarY * stepPerY);
+			x = abs(x);
+			y = abs(y);
+		}
+	}
+}
+
+/*-------------------------------------------------------------------*/
+/*Main function*/
+/*-------------------------------------------------------------------*/
+
 int main(void) {
     // TODO: insert code here
     prvSetupHardware();
 
-    /*Set up the global variables*/
+    /*Set up the ITM write console*/
+    /*set up the RITimer*/
+	Chip_RIT_Init(LPC_RITIMER);
+	NVIC_SetPriority( RITIMER_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1 );
+
+    /*Set up the queue/semaphores*/
 	sbRIT = xSemaphoreCreateBinary();
+	xSignal = xSemaphoreCreateBinary();
+	ySignal = xSemaphoreCreateBinary();
+	xCmdQueue = xQueueCreate(20, sizeof(Coordinates));
+
+	vQueueAddToRegistry(xCmdQueue, "coordinates");
+
+	/*Set up Pins*/
+    DigitalIoPin limSW1(1, 3, DigitalIoPin::pullup, true);		//up
+	DigitalIoPin limSW2(0, 0, DigitalIoPin::pullup, true);		//down
+	DigitalIoPin limSW3(0, 29, DigitalIoPin::pullup, true);		//right
+	DigitalIoPin limSW4(0, 9, DigitalIoPin::pullup, true); 		//left
+
+    DigitalIoPin laser(0, 12, DigitalIoPin::output, true);		//laser
+	DigitalIoPin pen(0, 10, DigitalIoPin::output, true);		//pen
+
+	DigitalIoPin xMotor(0, 24, DigitalIoPin::output, true);		//horizontal movement
+	DigitalIoPin xDir(1, 0, DigitalIoPin::output, true);		//horizontal direction
+	DigitalIoPin yMotor(0, 27, DigitalIoPin::output, true);		//vertical movement
+	DigitalIoPin yDir(0, 28, DigitalIoPin::output, true);		//vertical direction
+
+	DigitalIoPin SW1(0, 8, DigitalIoPin::pullup, true);
+	DigitalIoPin SW2(1, 6, DigitalIoPin::pullup, true);
+	DigitalIoPin SW3(1, 8, DigitalIoPin::pullup, true);
+
+	args.clear();
+	args.push_back(limSW1);
+	args.push_back(limSW2);
+	args.push_back(limSW3);
+	args.push_back(limSW4);
+	args.push_back(laser);
+	args.push_back(pen);
+	args.push_back(xMotor);
+	args.push_back(xDir);
+	args.push_back(yMotor);
+	args.push_back(yDir);
+	args.push_back(SW1);
+	args.push_back(SW2);
+	args.push_back(SW3);
 
     /*Create all tasks here*/
-	xTaskCreate(calibrate, "calibrate",
-				configMINIMAL_STACK_SIZE + 128, NULL, (tskIDLE_PRIORITY + 1UL),
-				(TaskHandle_t *) NULL);
-
 	xTaskCreate(vUARTCommTask, "UART",
 			    configMINIMAL_STACK_SIZE + 128, NULL, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
+
+	xTaskCreate(vMotorXTask, "motorX",
+				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+
+	xTaskCreate(vMotorYTask, "motorY",
+				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+
+	xTaskCreate(vCalibrationTask, "calibration",
+			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+
+	xTaskCreate(vControllerTask, "controller",
+			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+
+	/*Call the preparation functions*/
 
 	/* Start the scheduler */
 	vTaskStartScheduler();
@@ -246,32 +527,4 @@ int main(void) {
 
     }
     return 0 ;
-}
-
-void motor(char direction){
-	DigitalIoPin xDir(0, 28, DigitalIoPin::output, true); //down-up
-	DigitalIoPin xMotor(0, 27, DigitalIoPin::output, true);
-	DigitalIoPin yDir(1, 0, DigitalIoPin::output, true); //left-right
-	DigitalIoPin yMotor(0, 24, DigitalIoPin::output, true);
-
-		if (direction == 'R'){
-			yMotor.write(false);
-			yDir.write(false);
-			yMotor.write(true);
-		}
-		else if (direction == 'D'){
-			xMotor.write(false);
-			xDir.write(true);
-			xMotor.write(true);
-		}
-		else if (direction == 'L'){
-			yMotor.write(false);
-			yDir.write(true);
-			yMotor.write(true);
-		}
-		else if (direction == 'U'){
-			xMotor.write(false);
-			xDir.write(false);
-			xMotor.write(true);
-		}
 }
