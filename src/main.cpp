@@ -303,8 +303,6 @@ static void vCalibrationTask(void *pvParameters) {
 	auto it = arr->begin();
 	(it+4)->write(false);	//drive the laser to false
 	(it+5)->write(true);	//force the pen down
-	caliLock = false;
-	if (!caliLock) {
 		//ls1 = 0
 		//ls2 = 1
 		//ls3 = 2
@@ -445,7 +443,6 @@ static void vCalibrationTask(void *pvParameters) {
 		sprintf(buffer, "Y: %d \r\n", ySize);
 		Board_UARTPutSTR(buffer);
 		caliLock = true;
-	}
 }
 
 static void vControllerTask(void *pvParameters) {
