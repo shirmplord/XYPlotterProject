@@ -206,7 +206,6 @@ static void vUARTCommTask(void *pvParameters) {
 	}
 }
 
-<<<<<<< HEAD
 static void vMotorXTask(void *pvParameters) {
 	//ls3 = 2
 	//ls4 = 3
@@ -447,11 +446,9 @@ static void vControllerTask(void *pvParameters) {
 /*-------------------------------------------------------------------*/
 /*Main function*/
 /*-------------------------------------------------------------------*/
-int main(void) {
-=======
+
 int main(void) {
     // TODO: insert code here
->>>>>>> f3860363ac0e08acd4ed5df0d90251602f464329
     prvSetupHardware();
 
     /*Set up the ITM write console*/
