@@ -28,16 +28,30 @@
 #include "Parser.h"
 #include "DigitalIoPin.h"
 #include <vector>
+#include <cmath>
 
 /*Declaration of global variables*/
 volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
-SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
-std::vector<DigitalIoPin> args;		//vector for the PINS
-SemaphoreHandle_t xSignal = NULL;  //signal for the motor to move
-SemaphoreHandle_t ySignal = NULL;
-bool vertical;
 bool caliLock = false;
+int xSize;
+int ySize;
+SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
+SemaphoreHandle_t xSignal = NULL;  	//signal for the motor to move in the X direction
+SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direction
+QueueHandle_t xCmdQueue;
+std::vector<DigitalIoPin> args;		//vector for the PINS
+
+
+/*Declaration of data types*/
+struct Coordinates {
+	float currX;
+	float currY;
+	float tarX;
+	float tarY;
+	int stepsX;
+	int stepsY;
+};
 
 /*-------------------------------------------------------------------*/
 /*Functions declaration*/
@@ -111,6 +125,62 @@ static void prvSetupHardware(void)
 	/* Initial LED0 state is off */
 	Board_LED_Set(0, false);
 }
+/*Plotting line with 0 < abs(slope) < 1 (x is running)*/
+void PlotLineLow(int x0, int y0, int x1, int y1) {
+	int delay = 1000;
+	int dx = x1 - x0;
+	int dy = y1 - y0;
+	if (dy < 0)
+		dy = -dy;
+	int D = 2*dy - dx;
+
+	for (int x = x0;x < x1; x++) {
+		vertical = false;
+		RIT_start(1, delay);
+		if (D > 0) {
+			vertical = true;
+			RIT_start(1,delay);
+			D = D - 2*dx;
+		}
+		D = D + 2*dy;
+	}
+}
+/*Plotting line with abs(slope) > 1 (y is running)*/
+void plotLineHigh(int x0, int y0, int x1, int y1) {
+	int delay = 1000;
+	int dx = x1 - x0;
+	int dy = y1 - y0;
+	if (dy < 0)
+		dx = -dx;
+	int D = 2*dx - dy;
+
+	for (int y = y0;y < y1; y++) {
+		vertical = true;
+		RIT_start(1, delay);
+		if (D > 0) {
+			vertical = false;
+			RIT_start(1,delay);
+			D = D - 2*dy;
+		}
+		D = D + 2*dx;
+	}
+}
+
+/*Selecting which case to plot*/
+void Plot(int x0, int y0, int x, int y) {
+	if (abs(y - y0) < abs(x - x0)) {
+		if (x < x0) {
+			PlotLineLow(x, y, x0, y0);
+		}
+		else PlotLineLow(x0, y0, x, y);
+	} else {
+		if (y < y0) {
+			plotLineHigh(x, y, x0, y0);
+		} else {
+			plotLineHigh(x0, y0, x, y);
+		}
+	}
+}
 /*-------------------------------------------------------------------*/
 /*Task declaration*/
 /*-------------------------------------------------------------------*/
@@ -137,6 +207,8 @@ static void vUARTCommTask(void *pvParameters) {
 }
 
 static void vMotorXTask(void *pvParameters) {
+	//ls3 = 2
+	//ls4 = 3
 	//xMotor = 6
 	//xDir = 7
 	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
@@ -147,9 +219,33 @@ static void vMotorXTask(void *pvParameters) {
 	while(1) {
 		//normal movement used in the task
 		if (xSemaphoreTake(xSignal, portMAX_DELAY) == pdTRUE) {
-			/*LOOKING FOR CONDITION TO SELECT THE DIRECTION TO MOVE*/
-			(it+6)->write(signal);
-			signal = !signal;
+			if ((it+2)->read() == false && (it+3)->read() == false) {
+				/*LOOKING FOR CONDITION TO SELECT THE DIRECTION TO MOVE*/
+				(it+6)->write(signal);
+				signal = !signal;
+			}
+		}
+	}
+}
+
+static void vMotorYTask(void *pvParameters) {
+	//ls1 = 0
+	//ls2 = 1
+	//yMotor = 8
+	//yDir = 9
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	auto it = arr->begin();
+	bool signal = true;
+	vTaskDelay(100);
+
+	while(1) {
+		//normal movement used in the task
+		if (xSemaphoreTake(ySignal, portMAX_DELAY) == pdTRUE) {
+			if ((it)->read() == false && (it+1)->read() == false) {
+				/*LOOKING FOR CONDITION TO SELECT THE DIRECTION TO MOVE*/
+				(it+8)->write(signal);
+				signal = !signal;
+			}
 		}
 	}
 }
@@ -160,7 +256,7 @@ static void vCalibrationTask(void *pvParameters) {
 	auto it = arr->begin();
 	(it+4)->write(false);	//drive the laser to false
 	(it+5)->write(true);	//force the pen down
-
+	caliLock = false;
 	if (!caliLock) {
 		//ls1 = 0
 		//ls2 = 1
@@ -177,10 +273,11 @@ static void vCalibrationTask(void *pvParameters) {
 		int rightNum = 0;
 		int bottomNum = 0;
 		int leftNum = 0;
-		int xSize = 0;
-		int ySize = 0;
+		xSize = 0;
+		ySize = 0;
 //		int delay = 1000;
 
+		vTaskDelay(200);
 		//start checking the X+
 		(it+7)->write(true);
 		while ((it+3)->read()==false){
@@ -292,8 +389,8 @@ static void vCalibrationTask(void *pvParameters) {
 		}
 		/*Finished calibration*/
 		/*Calculate the output and print for debug*/
-		xSize = (topNum+bottomNum)/2;
-		ySize = (rightNum+leftNum)/2;
+		ySize = (topNum+bottomNum)/2;
+		xSize = (rightNum+leftNum)/2;
 
 		char buffer[10];
 		sprintf(buffer, "X: %d \r\n", xSize);
@@ -305,11 +402,43 @@ static void vCalibrationTask(void *pvParameters) {
 }
 
 static void vControllerTask(void *pvParameters) {
+	//xDir = 7
+	//yDir = 9
+	Coordinates cmd;
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	auto it = arr->begin();
+	vTaskDelay(100);
+	//convert the value to steps;
+	//X size = 380, Y size = 310
+	float stepPerX = xSize/380;
+	float stepPerY = ySize/310;
+
 	while(1) {
 		/*Take command from a queue*/
 		if (xQueueReceive(xCmdQueue, &cmd, portMAX_DELAY) == pdTRUE) {
-			/*Extract and sort the commands*/
+			//calculate the current number of steps from the origin
+			float x,y;
+			//Extract the coordinate and calculate the number of steps needed
+			x = (cmd.tarX-cmd.currX) * stepPerX;
+			y = (cmd.tarY-cmd.currX) * stepPerY;
+			//set the direction of the motor based on the value of x and y
+			if (x>=0)
+				(it+7)->write(true);
+			else (it+7)->write(false);
 
+			if (y>=0)
+				(it+9)->write(true);
+			else (it+9)->write(false);
+
+			/*algorithm: Bresenham
+			 * - Determine either x or y is the running variable (the large of the 2)
+			 * - Based on the slope of the line (y-y0)/(x-x0),
+			 *   determine whether to increase the follow variable
+			 * - Call RIT_start accordingly
+			 * */
+			Plot(cmd.currX * stepPerX, cmd.currY * stepPerY, cmd.tarX * stepPerX, cmd.tarY * stepPerY);
+			x = abs(x);
+			y = abs(y);
 		}
 	}
 }
@@ -323,15 +452,15 @@ int main(void) {
     /*Set up the ITM write console*/
     /*set up the RITimer*/
 	Chip_RIT_Init(LPC_RITIMER);
-	// set the priority level of the interrupt
-	// The level must be equal or lower than the maximum priority specified in FreeRTOS config
-	// Note that in a Cortex-M3 a higher number indicates lower interrupt priority
 	NVIC_SetPriority( RITIMER_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1 );
 
     /*Set up the queue/semaphores*/
 	sbRIT = xSemaphoreCreateBinary();
 	xSignal = xSemaphoreCreateBinary();
 	ySignal = xSemaphoreCreateBinary();
+	xCmdQueue = xQueueCreate(20, sizeof(Coordinates));
+
+	vQueueAddToRegistry(xCmdQueue, "coordinates");
 
 	/*Set up Pins*/
     DigitalIoPin limSW1(1, 3, DigitalIoPin::pullup, true);		//up
@@ -372,6 +501,10 @@ int main(void) {
 				(TaskHandle_t *) NULL);
 
 	xTaskCreate(vMotorXTask, "motorX",
+				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+
+	xTaskCreate(vMotorYTask, "motorY",
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
 
