@@ -446,7 +446,9 @@ static void vControllerTask(void *pvParameters) {
 /*-------------------------------------------------------------------*/
 /*Main function*/
 /*-------------------------------------------------------------------*/
+
 int main(void) {
+    // TODO: insert code here
     prvSetupHardware();
 
     /*Set up the ITM write console*/
