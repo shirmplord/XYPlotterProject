@@ -444,6 +444,28 @@ static void vCalibrationTask(void *pvParameters) {
 		Board_UARTPutSTR(buffer);
 		caliLock = true;
 }
+/*static void vLimitsTask(void *pvParameters) {
+	while(1){
+		if((it+0)->write(true).read() == true || (it+1)->write(true).read() == true || (it+2)->write(true).read() == true || (it+3)->write(true).read() == true){
+			while ((it+0)->write(true).read() == true){		//limit switch 1
+				motor('D');
+				vTaskDelay(delay);
+			}
+			while ((it+1)->write(true).read() == true){		//limit switch 2
+				motor('U');
+				vTaskDelay(delay);
+			}
+			while ((it+2)->write(true).read() == true){		//limit switch 3
+				motor('L');
+				vTaskDelay(delay);
+			}
+			while ((it+3)->write(true).read() == true){		//limit switch 4
+				motor('R');
+				vTaskDelay(delay);
+			}
+		}
+	}
+}*/
 
 static void vControllerTask(void *pvParameters) {
 	//xDir = 7
@@ -557,6 +579,10 @@ int main(void) {
 //	xTaskCreate(vCalibrationTask, "calibration",
 //			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
 //				(TaskHandle_t *) NULL);
+
+	/*xTaskCreate(vLimitsTask, "limits",
+				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);*/
 
 	xTaskCreate(vControllerTask, "controller",
 			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
