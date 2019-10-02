@@ -34,8 +34,8 @@
 volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
 bool caliLock = false;
-int xSize;
-int ySize;
+int xSize = 30000;
+int ySize = 27000;
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
 SemaphoreHandle_t xSignal = NULL;  	//signal for the motor to move in the X direction
 SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direction
@@ -49,8 +49,6 @@ struct Coordinates {
 	float currY;
 	float tarX;
 	float tarY;
-	int stepsX;
-	int stepsY;
 };
 
 /*-------------------------------------------------------------------*/
@@ -185,16 +183,65 @@ void Plot(int x0, int y0, int x, int y) {
 /*Task declaration*/
 /*-------------------------------------------------------------------*/
 static void vUARTCommTask(void *pvParameters) {
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	auto it = arr->begin();
+
+	vTaskDelay(100);
     int ch;
     std::string GCode;
     Parser parser;
+    Coordinates cmd;
 
-	vTaskDelay(100);
 	while (1) {
 		if ((ch = Board_UARTGetChar()) != EOF) {
 			if (ch == 10) {
 				std::string output(parser.Parse(GCode));
-				Board_UARTPutSTR(output.c_str());
+				Board_UARTPutSTR(GCode.c_str());
+				if(output == "M1"){		//set pen position, 90=down, 160=up
+					std::string value = "";
+					value = value.append(GCode.begin()+3, GCode.end());
+					Board_UARTPutSTR(value.c_str());
+					if (value == "90"){
+						(it+5)->write(true);
+					}
+					else if (value == "160"){
+						(it+5)->write(false);
+					}
+				}
+				else if(output == "M10"){	//
+					Board_UARTPutSTR("M10 XY 380 310 0.00 0.00 A0 B0 H0 S80 U160 D90");
+				}
+				else if(output == "G1"){	//get coordinates
+					std::string xVal = "";
+					std::string yVal = "";
+					int i = 4;
+
+					//get xVal
+					while(GCode.at(i) != ' '){
+						//std::string temp(GCode.at(i));
+						xVal = xVal+GCode.at(i);
+						i++;
+					}
+//					Board_UARTPutSTR(xVal.c_str());
+					cmd.tarX = atoi(xVal.c_str());
+
+					//skip space and character "Y" from GCode
+					i = i+2;
+
+					//get yVal
+					yVal = yVal.append(GCode.begin()+i, GCode.end());
+//					Board_UARTPutSTR(yVal.c_str());
+					cmd.tarY = atoi(yVal.c_str());
+					xQueueSend(xCmdQueue, &cmd, portMAX_DELAY);
+				}
+				else if(output == "G28"){	//go to origin
+					//xVal is 0
+					//yVal is 0
+					cmd.tarX = 0;
+					cmd.tarY = 0;
+					xQueueSend(xCmdQueue, &cmd, portMAX_DELAY);
+				}
+
 				if (output != "invalid code") {
 					Board_UARTPutSTR("\r\n");
 					Board_UARTPutSTR("OK\r\n");
@@ -510,9 +557,9 @@ int main(void) {
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
 
-	xTaskCreate(vCalibrationTask, "calibration",
-			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
-				(TaskHandle_t *) NULL);
+//	xTaskCreate(vCalibrationTask, "calibration",
+//			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
+//				(TaskHandle_t *) NULL);
 
 	xTaskCreate(vControllerTask, "controller",
 			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),

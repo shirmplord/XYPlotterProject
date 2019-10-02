@@ -12,12 +12,22 @@ std::string Parser::Parse(std::string input) {
 		//filter for command after M
 		switch (atoi(temp.c_str())) {
 		case 1:
+			output = "M1";
+			break;
 		case 2:
+			output = "M2";
+			break;
 		case 4:
+			output = "M4";
+			break;
 		case 5:
+			output = "M5";
+			break;
 		case 10:
+			output = "M10";
+			break;
 		case 11:
-			output = "M" + temp;
+			output = "M11";
 			break;
 		default:
 			output = "invalid";
@@ -30,8 +40,10 @@ std::string Parser::Parse(std::string input) {
 		//filter for command after G
 		switch (atoi(temp.c_str())) {
 		case 1:
+			output = "G1";
+			break;
 		case 28:
-			output = 'G' + temp;
+			output = "G28";
 			break;
 		default:
 			output = "invalid";
