@@ -116,13 +116,28 @@ void RIT_start(int count, int us)
 	}
 }
 /* Sets up system hardware */
-static void prvSetupHardware(void)
-{
+static void prvSetupHardware(void){
 	SystemCoreClockUpdate();
 	Board_Init();
 
 	/* Initial LED0 state is off */
 	Board_LED_Set(0, false);
+}
+void SCT_Init(void){
+	LPC_SCT0->CONFIG |= (1 << 17); // two 16 bit timers, auto limit
+	LPC_SCT0->CTRL_L |= (72-1) << 5; // set prescaler, SCTimer/PWM clock = 1 MHz
+	LPC_SCT0->MATCHREL[0].L = 20000;
+	LPC_SCT1->MATCHREL[1].L = 1000;
+
+	LPC_SCT0->EVENT[0].STATE = 0xFFFFFFFF; // event 0 happens in all state
+	LPC_SCT0->EVENT[0].CTRL = (1 << 12); // match 0 condition only
+
+	LPC_SCT0->EVENT[1].STATE = 0xFFFFFFFF; // event 1 happens in all states
+	LPC_SCT0->EVENT[1].CTRL = (1 << 0) | (1 << 12); // match 1 condition only
+
+	LPC_SCT0->OUT[0].SET = (1 << 0); // event 0 will set SCTx_OUT0
+	LPC_SCT0->OUT[0].CLR = (1 << 1); // event 1 will clear SCTx_OUT0
+	LPC_SCT0->CTRL_L &= ~(1 << 2); // start timer
 }
 /*X is the running*/
 /*Plotting line with 0 < abs(slope) < 1 (x is running), positive direction*/
@@ -248,10 +263,10 @@ static void vUARTCommTask(void *pvParameters) {
 						std::string value = "";
 						value = value.append(GCode.begin()+3, GCode.end());
 						if (value == "90"){
-							(it+5)->write(true);
+							LPC_SCT0->MATCHREL[1].L = 1352;	//down
 						}
 						else if (value == "160"){
-							(it+5)->write(false);
+							LPC_SCT0->MATCHREL[1].L = 1625;	//up
 						}
 						Board_UARTPutSTR("OK\r\n");
 					} else if(output == "M4"){		//set laser output
@@ -593,6 +608,7 @@ static void vControllerTask(void *pvParameters) {
 int main(void) {
     // TODO: insert code here
 	prvSetupHardware();
+	SCT_Init();
 
     /*Set up the ITM write console*/
     /*set up the RITimer*/
