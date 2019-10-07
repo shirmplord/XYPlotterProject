@@ -33,7 +33,7 @@
 /*Declaration of global variables*/
 volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
-bool caliLock = true;
+bool caliLock = false;
 int xSize = 498;
 int ySize = 498;
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
@@ -42,7 +42,7 @@ SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direct
 SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
-
+void motor(char);
 
 /*Declaration of data types*/
 struct Coordinates {
@@ -124,20 +124,22 @@ static void prvSetupHardware(void){
 	Board_LED_Set(0, false);
 }
 void SCT_Init(void){
-	LPC_SCT0->CONFIG |= (1 << 17); // two 16 bit timers, auto limit
-	LPC_SCT0->CTRL_L |= (72-1) << 5; // set prescaler, SCTimer/PWM clock = 1 MHz
-	LPC_SCT0->MATCHREL[0].L = 20000;
-	LPC_SCT1->MATCHREL[1].L = 1000;
+	Chip_SCT_Init(LPC_SCTLARGE0);
 
-	LPC_SCT0->EVENT[0].STATE = 0xFFFFFFFF; // event 0 happens in all state
-	LPC_SCT0->EVENT[0].CTRL = (1 << 12); // match 0 condition only
+	LPC_SCTLARGE0->CONFIG |= (1 << 17); // two 16 bit timers, auto limit
+	LPC_SCTLARGE0->CTRL_L |= (72-1) << 5; // set prescaler, SCTimer/PWM clock = 1 MHz
+	LPC_SCTLARGE0->MATCHREL[0].L = 20000 -1;
+	LPC_SCTLARGE0->MATCHREL[1].L = 1500;
 
-	LPC_SCT0->EVENT[1].STATE = 0xFFFFFFFF; // event 1 happens in all states
-	LPC_SCT0->EVENT[1].CTRL = (1 << 0) | (1 << 12); // match 1 condition only
+	LPC_SCTLARGE0->EVENT[0].STATE = 0xFFFFFFFF; // event 0 happens in all state
+	LPC_SCTLARGE0->EVENT[0].CTRL = (1 << 12); // match 0 condition only
 
-	LPC_SCT0->OUT[0].SET = (1 << 0); // event 0 will set SCTx_OUT0
-	LPC_SCT0->OUT[0].CLR = (1 << 1); // event 1 will clear SCTx_OUT0
-	LPC_SCT0->CTRL_L &= ~(1 << 2); // start timer
+	LPC_SCTLARGE0->EVENT[1].STATE = 0xFFFFFFFF; // event 1 happens in all states
+	LPC_SCTLARGE0->EVENT[1].CTRL = (1 << 0) | (1 << 12); // match 1 condition only
+
+	LPC_SCTLARGE0->OUT[0].SET = (1 << 0); // event 0 will set SCTx_OUT0
+	LPC_SCTLARGE0->OUT[0].CLR = (1 << 1); // event 1 will clear SCTx_OUT0
+	LPC_SCTLARGE0->CTRL_L &= ~(1 << 2); // start timer
 }
 /*X is the running*/
 /*Plotting line with 0 < abs(slope) < 1 (x is running), positive direction*/
@@ -248,93 +250,92 @@ static void vUARTCommTask(void *pvParameters) {
     std::string GCode;
     Parser parser;
     Coordinates cmd;
-    //Set the initial position to be at the center
-	cmd.currX = 250;
-	cmd.currY = 250;
+    //Set the initial position to be at the top left
+	cmd.currX = 1;
+	cmd.currY = 499;
+	Chip_SWM_MovablePortPinAssign(SWM_SCT0_OUT0_O, 0, 10);	//pen
 
 	while (1) {
-		if (caliLock) {
-			if ((ch = Board_UARTGetChar()) != EOF) {
-				if (ch == 10) {
-					std::string output(parser.Parse(GCode));
+		if ((ch = Board_UARTGetChar()) != EOF) {
+			if (ch == 10) {
+				std::string output(parser.Parse(GCode));
 //					Board_UARTPutSTR(GCode.c_str());
 //					Board_UARTPutSTR("\r\n");
-					if(output == "M1"){		//set pen position, 90=down, 160=up
-						std::string value = "";
-						value = value.append(GCode.begin()+3, GCode.end());
-						if (value == "90"){
-							LPC_SCT0->MATCHREL[1].L = 1352;	//down
-						}
-						else if (value == "160"){
-							LPC_SCT0->MATCHREL[1].L = 1625;	//up
-						}
-						Board_UARTPutSTR("OK\r\n");
-					} else if(output == "M4"){		//set laser output
-						std::string value = "";
-						value = value.append(GCode.begin()+3, GCode.end());
-						if (atoi(value.c_str())){
-							(it+4)->write(true);
-						}
-						else {
-							(it+4)->write(false);
-						}
-						//small delay for the laser to turn off
-						vTaskDelay(500);
-						Board_UARTPutSTR("OK\r\n");
+				if(output == "M1"){		//set pen position
+					std::string value = "";
+					value = value.append(GCode.begin()+3, GCode.end());
+					if (value == "160"){
+						LPC_SCT0->MATCHREL[1].L = 1600;	//down
 					}
-					else if(output == "M10"){	//send the start up reply
-						Board_UARTPutSTR("M10 XY 380 310 0.00 0.00 A0 B0 H0 S80 U160 D90\r\n");
-						Board_UARTPutSTR("OK\r\n");
+					else {
+						LPC_SCT0->MATCHREL[1].L = 1100;	//up
 					}
-					else if(output == "G1"){	//get coordinates
-						std::string xVal = "";
-						std::string yVal = "";
-						int i = 4;
-
-						//get xVal
-						while(GCode.at(i) != ' '){
-							xVal = xVal+GCode.at(i);
-							i++;
-						}
-						cmd.tarX = atof(xVal.c_str());
-
-						//skip space and character "Y" from GCode
-						i = i+2;
-
-						//get yVal
-						while(GCode.at(i) != ' '){
-							yVal = yVal+GCode.at(i);
-							i++;
-						}
-						cmd.tarY = atof(yVal.c_str());
-						//send the command to a queue
-						xQueueSend(xCmdQueue, &cmd, portMAX_DELAY);
-						//update the current position
-						cmd.currX = cmd.tarX;
-						cmd.currY = cmd.tarY;
-						//wait for the motors to stop moving then
-						if (xSemaphoreTake(doneMoving, portMAX_DELAY) == pdTRUE) {
-							Board_UARTPutSTR("OK\r\n");
-						}
+					Board_UARTPutSTR("OK\r\n");
+				} else if(output == "M4"){		//set laser output
+					std::string value = "";
+					value = value.append(GCode.begin()+3, GCode.end());
+					if (atoi(value.c_str())){
+						(it+4)->write(true);
 					}
-					else if(output == "G28"){	//go to origin
-						//xVal is 0
-						//yVal is 0
-						cmd.tarX = 0;
-						cmd.tarY = 0;
-						xQueueSend(xCmdQueue, &cmd, portMAX_DELAY);
-						//update the current positions
-						cmd.currX = cmd.tarX;
-						cmd.currY = cmd.tarY;
-						//wait for the motors to stop moving then
-						if (xSemaphoreTake(doneMoving, portMAX_DELAY) == pdTRUE) {
-							Board_UARTPutSTR("OK\r\n");
-						}
+					else {
+						(it+4)->write(false);
 					}
-					GCode = "";
+					//small delay for the laser to turn off
+					vTaskDelay(500);
+					Board_UARTPutSTR("OK\r\n");
 				}
-				else GCode += (char) ch;
+				else if(output == "M10"){	//send the start up reply
+					Board_UARTPutSTR("M10 XY 380 310 0.00 0.00 A0 B0 H0 S80 U160 D90\r\n");
+					Board_UARTPutSTR("OK\r\n");
+				}
+				else if(output == "G1"){	//get coordinates
+					std::string xVal = "";
+					std::string yVal = "";
+					int i = 4;
+
+					//get xVal
+					while(GCode.at(i) != ' '){
+						xVal = xVal+GCode.at(i);
+						i++;
+					}
+					cmd.tarX = atof(xVal.c_str());
+
+					//skip space and character "Y" from GCode
+					i = i+2;
+
+					//get yVal
+					while(GCode.at(i) != ' '){
+						yVal = yVal+GCode.at(i);
+						i++;
+					}
+					cmd.tarY = atof(yVal.c_str());
+					//send the command to a queue
+					xQueueSend(xCmdQueue, &cmd, portMAX_DELAY);
+					//update the current position
+					cmd.currX = cmd.tarX;
+					cmd.currY = cmd.tarY;
+					//wait for the motors to stop moving then
+					if (xSemaphoreTake(doneMoving, portMAX_DELAY) == pdTRUE) {
+						Board_UARTPutSTR("OK\r\n");
+					}
+				}
+				else if(output == "G28"){	//go to origin
+					//xVal is 0
+					//yVal is 0
+					cmd.tarX = 0;
+					cmd.tarY = 0;
+					xQueueSend(xCmdQueue, &cmd, portMAX_DELAY);
+					//update the current positions
+					cmd.currX = cmd.tarX;
+					cmd.currY = cmd.tarY;
+					//wait for the motors to stop moving then
+					if (xSemaphoreTake(doneMoving, portMAX_DELAY) == pdTRUE) {
+						Board_UARTPutSTR("OK\r\n");
+					}
+				}
+				GCode = "";
 			}
+			else GCode += (char) ch;
 		}
 	}
 }
@@ -384,146 +385,138 @@ static void vMotorYTask(void *pvParameters) {
 }
 
 static void vCalibrationTask(void *pvParameters) {
-	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	LPC_SCTLARGE0->MATCHREL[1].L = 1100;	//set pen down
+	//LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
 
-	auto it = arr->begin();
-	(it+4)->write(false);	//drive the laser to false
-	(it+5)->write(true);	//force the pen down
-	//ls1 = 0
-	//ls2 = 1
-	//ls3 = 2
-	//ls4 = 3
-	//laser = 4
-	//pen = 5
-	//xMotor = 6
-	//xDir = 7
-	//yMotor = 8
-	//yDir = 9
+	//args[0]	= Limit switch 1	= up
+	//args[1]	= Limit switch 2	= down
+	//args[2]	= Limit switch 3	= right
+	//args[3]	= Limit switch 4	= left
 
 	int topNum = 0;
 	int rightNum = 0;
 	int bottomNum = 0;
 	int leftNum = 0;
-	xSize = 0;
-	ySize = 0;
-	vTaskDelay(200);
-	while(1) {
-		if (!caliLock) {
-			//start checking the X+
-			(it+7)->write(true);
-			while ((it+3)->read()==false){
-				(it+6)->write(true);
-				vTaskDelay(1);
-				(it+6)->write(false);
-				vTaskDelay(1);
-			}
-			//border hit, time to move back
-			(it+7)->write(false);
-			while ((it+3)->read()==true){
-				(it+6)->write(true);
-				vTaskDelay(1);
-				(it+6)->write(false);
-				vTaskDelay(1);
-			}
-			//Keep going to Y-
-			(it+9)->write(false);
-			while(it->read()==false){
-				(it+8)->write(true);
-				vTaskDelay(1);
-				(it+8)->write(false);
-				vTaskDelay(1);
-			}
-			//border hit, time to move back
-			(it+9)->write(true);
-			while(it->read()==true){
-				(it+8)->write(true);
-				vTaskDelay(1);
-				(it+8)->write(false);
-				vTaskDelay(1);
-			}
-			/*--------------------------------------------------*/
-			/*Reached the XO corner
-			 * start running through the border
-			 * register the number of steps of each directions*/
-			/*--------------------------------------------------*/
-			//check the X-; count the horizontal steps
-			(it+7)->write(false);
-			while((it+2)->read()==false){
-				topNum++;
-				(it+6)->write(true);
-				vTaskDelay(1);
-				(it+6)->write(false);
-				vTaskDelay(1);
-			}
-			//back-up to not hit the limit switch
-			(it+7)->write(true);
-			while((it+2)->read()==true){
-				topNum--;
-				(it+6)->write(true);
-				vTaskDelay(1);
-				(it+6)->write(false);
-				vTaskDelay(1);
-			}
-			//check the Y+ direction, count the vertical limit
-			(it+9)->write(true);
-			while((it+1)->read()==false){
-				rightNum++;
-				(it+8)->write(true);
-				vTaskDelay(1);
-				(it+8)->write(false);
-				vTaskDelay(1);
-			}
-			//back-up to not hit the limit switch
-			(it+9)->write(false);
-			while((it+1)->read()==true){
-				rightNum--;
-				(it+8)->write(true);
-				vTaskDelay(1);
-				(it+8)->write(false);
-				vTaskDelay(1);
-			}
-			//check the X+
-			(it+7)->write(true);
-			while((it+3)->read()==false){
-				bottomNum++;
-				(it+6)->write(true);
-				vTaskDelay(1);
-				(it+6)->write(false);
-				vTaskDelay(1);
-			}
-			//back-up to not hit the limit switch
-			(it+7)->write(false);
-			while((it+3)->read()==true){
-				bottomNum--;
-				(it+6)->write(true);
-				vTaskDelay(1);
-				(it+6)->write(false);
-				vTaskDelay(1);
-			}
-			//checking the Y- direction
-			(it+9)->write(false);
-			while(it->read()==false){
-				leftNum++;
-				(it+8)->write(true);
-				vTaskDelay(1);
-				(it+8)->write(false);
-				vTaskDelay(1);
-			}
-			//back-up to not hit the limit switch
-			(it+9)->write(true);
-			while(it->read()==true){
-				leftNum--;
-				(it+8)->write(true);
-				vTaskDelay(1);
-				(it+8)->write(false);
-				vTaskDelay(1);
-			}
-			/*Finished calibration*/
-			/*Calculate the output and print for debug*/
-			ySize = (topNum+bottomNum)/2;
-			xSize = (rightNum+leftNum)/2;
-			caliLock = true;
-		}
+	int delay = 1;
+
+	args[4].write(false);	//laser
+	//Delay for laser to actually turn off
+	vTaskDelay(100);
+
+	//LEFT until limit
+	while (args[3].read()==false){
+		motor('L');
+		vTaskDelay(delay);
+	}
+	//back-up to not hit the limit switch
+	while (args[3].read()==true){
+		motor('R');
+		vTaskDelay(delay);
+	}
+	//UP until limit
+	while(args[0].read()==false){
+		motor('U');
+		vTaskDelay(delay);
+	}
+	//back-up to not hit the limit switch
+	while(args[0].read()==true){
+		motor('D');
+		vTaskDelay(delay);
+	}
+
+//AT THE TOP LEFT CORNER
+
+	//counting RIGHT till limit
+	while(args[2].read()==false){
+		topNum++;
+		motor('R');
+		vTaskDelay(delay);
+	}
+
+	//back-up to not hit the limit switch
+	while(args[2].read()==true){
+		topNum--;
+		motor('L');
+		vTaskDelay(delay);
+	}
+
+	//counting DOWN till limit
+	while(args[1].read()==false){
+		rightNum++;
+		motor('D');
+		vTaskDelay(delay);
+	}
+	//back-up to not hit the limit switch
+	while(args[1].read()==true){
+		rightNum--;
+		motor('U');
+		vTaskDelay(delay);
+	}
+	//counting LEFT till limit
+	while(args[3].read()==false){
+		bottomNum++;
+		motor('L');
+		vTaskDelay(delay);
+	}
+	//back-up to not hit the limit switch
+	while(args[3].read()==true){
+		bottomNum--;
+		motor('R');
+		vTaskDelay(delay);
+	}
+	//counting UP till limit
+	while(args[0].read()==false){
+		leftNum++;
+		motor('U');
+		vTaskDelay(delay);
+	}
+	//back-up to not hit the limit switch
+	while(args[0].read()==true){
+		leftNum--;
+		motor('D');
+		vTaskDelay(delay);
+	}
+
+//ENDS UP IN TOP LEFT CORNER
+
+	xSize = (topNum+bottomNum)/2;
+	ySize = (rightNum+leftNum)/2;
+
+	char buffer[10];
+	int n;
+	n=sprintf(buffer, "X: %d \r\n", xSize);
+	Board_UARTPutSTR(buffer);
+	n=sprintf(buffer, "Y: %d \r\n", ySize);
+	Board_UARTPutSTR(buffer);
+
+	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
+	vTaskDelete(NULL);
+}
+void motor(char direction){
+	//args[6]	= xMotor
+	//args[7]	= xDir	= down-up
+	//args[8]	= yMotor
+	//args[9]	= yDir	= left-right
+
+	if (direction == 'R'){
+		args[8].write(false);	//yMotor
+		args[9].write(false);	//yDir
+		args[8].write(true);
+	}
+	else if (direction == 'D'){
+		args[6].write(false);	//xMotor
+		args[7].write(true);	//xDir
+		args[6].write(true);
+	}
+	else if (direction == 'L'){
+		args[8].write(false);	//yMotor
+		args[9].write(true);	//yDir
+		args[8].write(true);
+	}
+	else if (direction == 'U'){
+		args[6].write(false);	//xMotor
+		args[7].write(false);	//xDir
+		args[6].write(true);
 	}
 }
 
@@ -658,8 +651,12 @@ int main(void) {
 	args.push_back(SW3);
 
     /*Create all tasks here*/
+	xTaskCreate(vCalibrationTask, "calibration",
+				configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
+
 	xTaskCreate(vUARTCommTask, "UART",
-			    configMINIMAL_STACK_SIZE + 128, NULL, (tskIDLE_PRIORITY + 1UL),
+			    configMINIMAL_STACK_SIZE * 2, NULL, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
 
 	xTaskCreate(vMotorXTask, "motorX",
@@ -669,10 +666,6 @@ int main(void) {
 	xTaskCreate(vMotorYTask, "motorY",
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
-
-//	xTaskCreate(vCalibrationTask, "calibration",
-//			    configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
-//				(TaskHandle_t *) NULL);
 
 //	xTaskCreate(vLimitsTask, "limits",
 //				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
