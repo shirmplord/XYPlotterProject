@@ -33,7 +33,6 @@
 /*Declaration of global variables*/
 volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
-bool caliLock = false;
 int xSize = 498;
 int ySize = 498;
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
@@ -42,6 +41,8 @@ SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direct
 SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
+//bool caliLock = true;
+TaskHandle_t limitHandle = NULL;
 
 /*Declaration of data types*/
 struct Coordinates {
@@ -531,32 +532,42 @@ static void vCalibrationTask(void *pvParameters) {
 	Board_UARTPutSTR(buffer);
 
 //	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
+	//caliLock = false;
+	vTaskResume(limitHandle);
 	vTaskDelete(NULL);
 }
 
-/**/
-//static void vLimitsTask(void *pvParameters) {
-//	while(1){
-//		if((it+0)->write(true).read() == true || (it+1)->write(true).read() == true || (it+2)->write(true).read() == true || (it+3)->write(true).read() == true){
-//			while ((it+0)->write(true).read() == true){		//limit switch 1
-//				motor('D');
-//				vTaskDelay(delay);
-//			}
-//			while ((it+1)->write(true).read() == true){		//limit switch 2
-//				motor('U');
-//				vTaskDelay(delay);
-//			}
-//			while ((it+2)->write(true).read() == true){		//limit switch 3
-//				motor('L');
-//				vTaskDelay(delay);
-//			}
-//			while ((it+3)->write(true).read() == true){		//limit switch 4
-//				motor('R');
-//				vTaskDelay(delay);
-//			}
-//		}
-//	}
-//}
+static void vLimitsTask(void *pvParameters) {
+	//args[0]	= Limit switch 1
+	//args[1]	= Limit switch 2
+	//args[2]	= Limit switch 3
+	//args[3]	= Limit switch 4
+	int delay = 1;
+	while(1){
+		vTaskSuspend(limitHandle);
+
+		//if(caliLock == false){
+		//if(args[0].read() == true || args[1].read() == true || args[2].read() == true || args[3].read() == true){
+			while (args[0].read() == true){		//limit switch 1
+				motor('D');
+				vTaskDelay(delay);
+			}
+			while (args[1].read() == true){		//limit switch 2
+				motor('U');
+				vTaskDelay(delay);
+			}
+			while (args[2].read() == true){		//limit switch 3
+				motor('L');
+				vTaskDelay(delay);
+			}
+			while (args[3].read() == true){		//limit switch 4
+				motor('R');
+				vTaskDelay(delay);
+			}
+		//}
+	}
+}
+
 /* Controller task for the motor
  * - Monitors a queue and take the values from there
  * - Calculate the ratios and send to Plot function to execute
@@ -684,9 +695,9 @@ int main(void) {
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
 
-//	xTaskCreate(vLimitsTask, "limits",
-//				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
-//				(TaskHandle_t *) NULL);
+	xTaskCreate(vLimitsTask, "limits",
+				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
+				&limitHandle);
 
 	xTaskCreate(vControllerTask, "controller",
 			    configMINIMAL_STACK_SIZE + 128 + 128, &args, (tskIDLE_PRIORITY + 1UL),
