@@ -36,12 +36,16 @@ volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
 int xSize = 0;
 int ySize = 0;
+
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
 SemaphoreHandle_t xSignal = NULL;  	//signal for the motor to move in the X direction
 SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direction
 SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
+TaskHandle_t limitHandle = NULL;
+TaskHandle_t uartHandle = NULL;
+
 
 /*Declaration of data types*/
 struct Coordinates {
@@ -314,10 +318,10 @@ static void vUARTCommTask(void *pvParameters) {
 					std::string value = "";
 					value = value.append(GCode.begin()+3, GCode.end());
 					if (value == "160"){
-						LPC_SCT0->MATCHREL[1].L = 1600;	//down
+						LPC_SCT0->MATCHREL[1].L = 1600;	//up
 					}
 					else {
-						LPC_SCT0->MATCHREL[1].L = 1100;	//up
+						LPC_SCT0->MATCHREL[1].L = 1100;	//down
 					}
 					Board_UARTPutSTR("OK\r\n");
 				} else if(output == "M4"){		//set laser output
@@ -537,10 +541,11 @@ static void vCalibrationTask(void *pvParameters) {
 	xSize/=2;
 	ySize/=2;
 //	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
+
+	//resuming the limit task
+	vTaskResume(limitHandle);
 	vTaskDelete(NULL);
 }
-
-/**/
 
 /* Controller task for the motor
  * - Monitors a queue and take the values from there
@@ -659,7 +664,7 @@ int main(void) {
 
 	xTaskCreate(vUARTCommTask, "UART",
 			    configMINIMAL_STACK_SIZE * 2, NULL, (tskIDLE_PRIORITY + 1UL),
-				(TaskHandle_t *) NULL);
+				&uartHandle);
 
 	xTaskCreate(vMotorXTask, "motorX",
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
