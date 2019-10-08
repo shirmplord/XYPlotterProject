@@ -29,13 +29,14 @@
 #include "DigitalIoPin.h"
 #include <vector>
 #include <cmath>
-#include "Plotter.h"
 
 /*Declaration of global variables*/
 volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
 int xSize = 0;
 int ySize = 0;
+int xSizemm = 310;
+int ySizemm = 380;
 
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
 SemaphoreHandle_t xSignal = NULL;  	//signal for the motor to move in the X direction
@@ -43,9 +44,6 @@ SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direct
 SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
-TaskHandle_t limitHandle = NULL;
-TaskHandle_t uartHandle = NULL;
-
 
 /*Declaration of data types*/
 struct Coordinates {
@@ -274,10 +272,21 @@ static void vUARTCommTask(void *pvParameters) {
     std::string GCode;
     Parser parser;
     Coordinates cmd;
-    //Set the initial position to be at the origin
+    //Set the initial position to be at the top left
 	cmd.currX = 1;
-	cmd.currY = 1;
+	cmd.currY = 499;
 	Chip_SWM_MovablePortPinAssign(SWM_SCT0_OUT0_O, 0, 10);	//pen
+	char buffer[50];	//used for printing
+
+	int penUpValue = 160;
+	int penDownValue = 90;
+	int ls1 = 0;
+	int ls2 = 0;
+	int ls3 = 0;
+	int ls4 = 0;
+	int xDirection = 0;
+	int yDirection = 0;
+	int plottingSpeed = 80;
 
 	while (1) {
 		if ((ch = Board_UARTGetChar()) != EOF) {
@@ -285,17 +294,48 @@ static void vUARTCommTask(void *pvParameters) {
 				std::string output(parser.Parse(GCode));
 //					Board_UARTPutSTR(GCode.c_str());
 //					Board_UARTPutSTR("\r\n");
-				if(output == "M1"){		//set pen position
+
+				//SET PEN POSITION
+				if(output == "M1"){
 					std::string value = "";
 					value = value.append(GCode.begin()+3, GCode.end());
-					if (value == "160"){
+					if (value == std::to_string(penUpValue)){
 						LPC_SCT0->MATCHREL[1].L = 1600;	//up
 					}
-					else {
+					else if (value == std::to_string(penDownValue)){
 						LPC_SCT0->MATCHREL[1].L = 1100;	//down
 					}
 					Board_UARTPutSTR("OK\r\n");
-				} else if(output == "M4"){		//set laser output
+				}
+
+				//SAVE PEN UP/DOWN POSITION
+				else if(output == "M2"){
+					std::string uVal = "";
+					std::string dVal = "";
+					//skip "M2 U"
+					int i = 4;
+
+					//get up value
+					while(GCode.at(i) != ' '){
+						uVal = uVal+GCode.at(i);
+						i++;
+					}
+					penUpValue = atoi(uVal.c_str());
+
+					//skip space and character "D" from GCode
+					i = i+2;
+
+					//get down value
+					while(GCode.at(i) != ' '){
+						dVal = dVal+GCode.at(i);
+						i++;
+					}
+					penDownValue = atoi(dVal.c_str());
+					Board_UARTPutSTR("OK\r\n");
+				}
+
+				//SET LASER OUTPUT
+				else if(output == "M4"){
 					std::string value = "";
 					value = value.append(GCode.begin()+3, GCode.end());
 					if (atoi(value.c_str())){
@@ -308,13 +348,103 @@ static void vUARTCommTask(void *pvParameters) {
 					vTaskDelay(500);
 					Board_UARTPutSTR("OK\r\n");
 				}
-				else if(output == "M10"){	//send the start up reply
-					Board_UARTPutSTR("M10 XY 380 310 0.00 0.00 A0 B0 H0 S80 U160 D90\r\n");
-					Board_UARTPutSTR("OK\r\n");
-				}
-				else if(output == "G1"){	//get coordinates
+
+				//SAVE STEPPER DIRECTION, AREA, SPEED
+				else if(output == "M5"){
+					//M5 A0 B0 H310 W380 S80
 					std::string xVal = "";
 					std::string yVal = "";
+					std::string hVal = "";
+					std::string wVal = "";
+					std::string sVal = "";
+					//skip "M5 A"
+					int i = 4;
+
+					//get xVal
+					while(GCode.at(i) != ' '){
+						xVal = xVal+GCode.at(i);
+						i++;
+					}
+					xDirection = atoi(xVal.c_str());
+					//skip space and character "B" from GCode
+					i = i+2;
+					//get yVal
+					while(GCode.at(i) != ' '){
+						yVal = yVal+GCode.at(i);
+						i++;
+					}
+					yDirection = atoi(yVal.c_str());
+					//skip space and character "H" from GCode
+					i = i+2;
+					//get hVal
+					while(GCode.at(i) != ' '){
+						hVal = hVal+GCode.at(i);
+						i++;
+					}
+					ySizemm = atoi(hVal.c_str());
+					//skip space and character "W" from GCode
+					i = i+2;
+					//get wVal
+					while(GCode.at(i) != ' '){
+						wVal = wVal+GCode.at(i);
+						i++;
+					}
+					xSizemm = atoi(wVal.c_str());
+					//skip space and character "S" from GCode
+					i = i+2;
+					//get sVal
+					while(GCode.at(i) != ' '){
+						sVal = sVal+GCode.at(i);
+						i++;
+					}
+					plottingSpeed = atoi(sVal.c_str());
+
+					Board_UARTPutSTR("OK\r\n");
+				}
+
+				//SEND THE START UP REPLY
+				else if(output == "M10"){
+					//sprintf(buffer, "M10 XY 380 310 0.00 0.00 A0 B0 H0 S80 U160 D90\r\n");
+					sprintf(buffer, "M10 XY %d %d 0.00 0.00 A%d B%d H0 S%d U%d D%d\r\n",
+							ySizemm, xSizemm, xDirection, yDirection, plottingSpeed, penUpValue, penDownValue);
+					Board_UARTPutSTR(buffer);
+					Board_UARTPutSTR("OK\r\n");
+				}
+
+				//LIMIT SWITCH STATUS QUERY
+				else if(output == "M11"){
+					//reply order: L4(left), L3(right), L2(down), L1(up)
+					//1 means open switch, 0 means closed
+					if(args[0].read()==true){	//limit switch 1
+						ls1 = 0;
+					}else{
+						ls1 = 1;
+					}
+					if(args[1].read()==true){	//limit switch 2
+						ls2 = 0;
+					}else{
+						ls2 = 1;
+					}
+					if(args[2].read()==true){	//limit switch 3
+						ls3 = 0;
+					}else{
+						ls3 = 1;
+					}
+					if(args[3].read()==true){	//limit switch 4
+						ls4 = 0;
+					}else{
+						ls4 = 1;
+					}
+					sprintf(buffer, "M11 %d %d %d %d \r\n", ls4, ls3, ls2, ls1);
+					Board_UARTPutSTR(buffer);
+					Board_UARTPutSTR("OK\r\n");
+				}
+
+				//GET COORDINATES
+				else if(output == "G1"){
+					std::string xVal = "";
+					std::string yVal = "";
+					//skip "G1 X"
 					int i = 4;
 
 					//get xVal
@@ -343,7 +473,9 @@ static void vUARTCommTask(void *pvParameters) {
 						Board_UARTPutSTR("OK\r\n");
 					}
 				}
-				else if(output == "G28"){	//go to origin
+
+				//GO TO ORIGIN
+				else if(output == "G28"){
 					//xVal is 0
 					//yVal is 0
 					cmd.tarX = 0;
@@ -426,6 +558,9 @@ static void vCalibrationTask(void *pvParameters) {
 	auto it = arr->begin();
 
 	int delay = 50;
+	//start counters from 0
+	xSize = 0;
+	ySize = 0;
 
 	(it+pen)->write(false);	//laser
 	//Delay for laser to actually turn off
@@ -502,19 +637,17 @@ static void vCalibrationTask(void *pvParameters) {
 
 //	xSize = (topNum+bottomNum)/2;
 //	ySize = (rightNum+leftNum)/2;
-
+	xSize/=2;
+	ySize/=2;
 	char buffer[10];
 	int n;
 	n=sprintf(buffer, "X: %d \r\n", xSize);
 	Board_UARTPutSTR(buffer);
 	n=sprintf(buffer, "Y: %d \r\n", ySize);
 	Board_UARTPutSTR(buffer);
-	xSize/=2;
-	ySize/=2;
+
 //	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
 
-	//resuming the limit task
-	vTaskResume(limitHandle);
 	vTaskDelete(NULL);
 }
 
@@ -556,9 +689,9 @@ static void vControllerTask(void *pvParameters) {
 				(it+yDir)->write(false);
 			else (it+yDir)->write(true);
 
-			//set the scaling value: detemining the steps/pixel ratio
-			x = xSize/380;
-			y = ySize/310;
+			//set the scaling value: determining the steps/pixel ratio
+			x = xSize/xSizemm;
+			y = ySize/ySizemm;
 //			x=1;
 //			y=1;
 			/*algorithm: Bresenham
@@ -634,8 +767,8 @@ int main(void) {
 				(TaskHandle_t *) NULL);
 
 	xTaskCreate(vUARTCommTask, "UART",
-			    configMINIMAL_STACK_SIZE * 2, NULL, (tskIDLE_PRIORITY + 1UL),
-				&uartHandle);
+			    configMINIMAL_STACK_SIZE * 4, NULL, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) NULL);
 
 	xTaskCreate(vMotorXTask, "motorX",
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
