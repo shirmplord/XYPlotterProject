@@ -255,35 +255,6 @@ void Plot(int x0, int y0, int x, int y) {
 		}
 	}
 }
-/* Function used for CALIBRATION ONLY
- * */
-void motor(char direction){
-	//args[6]	= xMotor
-	//args[7]	= xDir	= down-up
-	//args[8]	= yMotor
-	//args[9]	= yDir	= left-right
-
-	if (direction == 'R'){
-		args[6].write(false);	//yMotor
-		args[7].write(false);	//yDir
-		args[6].write(true);
-	}
-	else if (direction == 'D'){
-		args[8].write(false);	//xMotor
-		args[9].write(true);	//xDir
-		args[8].write(true);
-	}
-	else if (direction == 'L'){
-		args[6].write(false);	//yMotor
-		args[7].write(true);	//yDir
-		args[6].write(true);
-	}
-	else if (direction == 'U'){
-		args[8].write(false);	//xMotor
-		args[9].write(false);	//xDir
-		args[8].write(true);
-	}
-}
 /*-------------------------------------------------------------------*/
 /*Task declaration*/
 /*-------------------------------------------------------------------*/
