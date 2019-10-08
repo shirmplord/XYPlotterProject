@@ -29,13 +29,13 @@
 #include "DigitalIoPin.h"
 #include <vector>
 #include <cmath>
+#include "Plotter.h"
 
 /*Declaration of global variables*/
 volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
-bool caliLock = false;
-int xSize = 498;
-int ySize = 498;
+int xSize = 0;
+int ySize = 0;
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
 SemaphoreHandle_t xSignal = NULL;  	//signal for the motor to move in the X direction
 SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direction
@@ -51,6 +51,20 @@ struct Coordinates {
 	float tarY;
 };
 
+enum vctPos {	limit1,
+				limit2,
+				limit3,
+				limit4,
+				laser,
+				pen,
+				xMotor,
+				xDir,
+				yMotor,
+				yDir,
+				sw1,
+				sw2,
+				sw3
+			};
 /*-------------------------------------------------------------------*/
 /*Functions declaration*/
 /*-------------------------------------------------------------------*/
@@ -128,7 +142,7 @@ void SCT_Init(void){
 	LPC_SCTLARGE0->CONFIG |= (1 << 17); // two 16 bit timers, auto limit
 	LPC_SCTLARGE0->CTRL_L |= (72-1) << 5; // set prescaler, SCTimer/PWM clock = 1 MHz
 	LPC_SCTLARGE0->MATCHREL[0].L = 20000 -1;
-	LPC_SCTLARGE0->MATCHREL[1].L = 1500;
+	LPC_SCTLARGE0->MATCHREL[1].L = 1000;
 
 	LPC_SCTLARGE0->EVENT[0].STATE = 0xFFFFFFFF; // event 0 happens in all state
 	LPC_SCTLARGE0->EVENT[0].CTRL = (1 << 12); // match 0 condition only
@@ -143,7 +157,7 @@ void SCT_Init(void){
 /*X is the running*/
 /*Plotting line with 0 < abs(slope) < 1 (x is running), positive direction*/
 void PlotLineLowPositive(int x0, int y0, int x1, int y1) {
-	int delay = 500;
+	int delay = 100;
 	int dx = x1 - x0;
 	int dy = y1 - y0;
 	if (dy < 0)
@@ -163,7 +177,7 @@ void PlotLineLowPositive(int x0, int y0, int x1, int y1) {
 }
 /*Plotting line with 0 < abs(slope) < 1 (x is running), negative direction*/
 void PlotLineLowNegative(int x0, int y0, int x1, int y1) {
-	int delay = 500;
+	int delay = 100;
 	int dx = x0 - x1;
 	int dy = y1 - y0;
 	if (dy < 0)
@@ -184,7 +198,7 @@ void PlotLineLowNegative(int x0, int y0, int x1, int y1) {
 /*Y is the running*/
 /*Plotting line with abs(slope) > 1 (y is running), positive direction*/
 void plotLineHighPositive(int x0, int y0, int x1, int y1) {
-	int delay = 500;
+	int delay = 100;
 	int dx = x1 - x0;
 	int dy = y1 - y0;
 	if (dx < 0)
@@ -202,9 +216,9 @@ void plotLineHighPositive(int x0, int y0, int x1, int y1) {
 		D = D + 2*dx;
 	}
 }
-/*Plotting line with abs(slope) > 1 (y is running), positive direction*/
+/*Plotting line with abs(slope) > 1 (y is running), negative direction*/
 void plotLineHighNegative(int x0, int y0, int x1, int y1) {
-	int delay = 500;
+	int delay = 100;
 	int dx = x1 - x0;
 	int dy = y0 - y1;
 	if (dx < 0)
@@ -246,24 +260,24 @@ void motor(char direction){
 	//args[9]	= yDir	= left-right
 
 	if (direction == 'R'){
-		args[8].write(false);	//yMotor
-		args[9].write(false);	//yDir
-		args[8].write(true);
+		args[6].write(false);	//yMotor
+		args[7].write(false);	//yDir
+		args[6].write(true);
 	}
 	else if (direction == 'D'){
-		args[6].write(false);	//xMotor
-		args[7].write(true);	//xDir
-		args[6].write(true);
-	}
-	else if (direction == 'L'){
-		args[8].write(false);	//yMotor
-		args[9].write(true);	//yDir
+		args[8].write(false);	//xMotor
+		args[9].write(true);	//xDir
 		args[8].write(true);
 	}
-	else if (direction == 'U'){
-		args[6].write(false);	//xMotor
-		args[7].write(false);	//xDir
+	else if (direction == 'L'){
+		args[6].write(false);	//yMotor
+		args[7].write(true);	//yDir
 		args[6].write(true);
+	}
+	else if (direction == 'U'){
+		args[8].write(false);	//xMotor
+		args[9].write(false);	//xDir
+		args[8].write(true);
 	}
 }
 /*-------------------------------------------------------------------*/
@@ -285,9 +299,9 @@ static void vUARTCommTask(void *pvParameters) {
     std::string GCode;
     Parser parser;
     Coordinates cmd;
-    //Set the initial position to be at the top left
+    //Set the initial position to be at the origin
 	cmd.currX = 1;
-	cmd.currY = 499;
+	cmd.currY = 1;
 	Chip_SWM_MovablePortPinAssign(SWM_SCT0_OUT0_O, 0, 10);	//pen
 
 	while (1) {
@@ -391,8 +405,8 @@ static void vMotorXTask(void *pvParameters) {
 	while(1) {
 		//normal movement used in the task
 		if (xSemaphoreTake(xSignal, portMAX_DELAY) == pdTRUE) {
-			if ((it+2)->read() == false && (it+3)->read() == false) {
-				(it+6)->write(signal);
+			if ((it+limit3)->read() == false && (it+limit4)->read() == false) {
+				(it+xMotor)->write(signal);
 				signal = !signal;
 			}
 		}
@@ -415,8 +429,8 @@ static void vMotorYTask(void *pvParameters) {
 	while(1) {
 		//normal movement used in the task
 		if (xSemaphoreTake(ySignal, portMAX_DELAY) == pdTRUE) {
-			if ((it)->read() == false && (it+1)->read() == false) {
-				(it+8)->write(signal);
+			if ((it+limit1)->read() == false && (it+limit2)->read() == false) {
+				(it+yMotor)->write(signal);
 				signal = !signal;
 			}
 		}
@@ -429,99 +443,90 @@ static void vCalibrationTask(void *pvParameters) {
 //	LPC_SCTLARGE0->MATCHREL[1].L = 1100;	//set pen down
 	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
 
-	//args[0]	= Limit switch 1	= up
-	//args[1]	= Limit switch 2	= down
-	//args[2]	= Limit switch 3	= right
-	//args[3]	= Limit switch 4	= left
+	//Limit switch 1	= up
+	//Limit switch 2	= down
+	//Limit switch 3	= left
+	//Limit switch 4	= right
+	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
+	auto it = arr->begin();
 
-	int topNum = 0;
-	int rightNum = 0;
-	int bottomNum = 0;
-	int leftNum = 0;
-	int delay = 1;
+	int delay = 50;
 
-	args[4].write(false);	//laser
+	(it+pen)->write(false);	//laser
 	//Delay for laser to actually turn off
 	vTaskDelay(100);
 
-	//LEFT until limit
-	while (args[3].read()==false){
-		motor('L');
-		vTaskDelay(delay);
+	//X+ until limit
+	vertical = false;
+	while ((it+limit4)->read()==false){
+		(it+xDir)->write(false);
+		RIT_start(2,delay);
 	}
 	//back-up to not hit the limit switch
-	while (args[3].read()==true){
-		motor('R');
-		vTaskDelay(delay);
+	while ((it+limit4)->read()==true){		//Do not use the motor task since it won't run when limit switches are read
+		(it+xDir)->write(true);
+		(it+xMotor)->write(true);
+		RIT_start(1, delay);
+		(it+xMotor)->write(false);
+		RIT_start(1, delay);
 	}
-	//UP until limit
-	while(args[0].read()==false){
-		motor('U');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	while(args[0].read()==true){
-		motor('D');
-		vTaskDelay(delay);
-	}
-
-//AT THE TOP LEFT CORNER
-
-	//counting RIGHT till limit
-	while(args[2].read()==false){
-		topNum++;
-		motor('R');
-		vTaskDelay(delay);
-	}
-
-	//back-up to not hit the limit switch
-	while(args[2].read()==true){
-		topNum--;
-		motor('L');
-		vTaskDelay(delay);
-	}
-
-	//counting DOWN till limit
-	while(args[1].read()==false){
-		rightNum++;
-		motor('D');
-		vTaskDelay(delay);
+	//Y+ until limit
+	vertical = true;
+	while((it+limit1)->read()==false){
+		(it+yDir)->write(false);
+		RIT_start(2,delay);
 	}
 	//back-up to not hit the limit switch
-	while(args[1].read()==true){
-		rightNum--;
-		motor('U');
-		vTaskDelay(delay);
-	}
-	//counting LEFT till limit
-	while(args[3].read()==false){
-		bottomNum++;
-		motor('L');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	while(args[3].read()==true){
-		bottomNum--;
-		motor('R');
-		vTaskDelay(delay);
-	}
-	//counting UP till limit
-	while(args[0].read()==false){
-		leftNum++;
-		motor('U');
-		vTaskDelay(delay);
-	}
-	//back-up to not hit the limit switch
-	while(args[0].read()==true){
-		leftNum--;
-		motor('D');
-		vTaskDelay(delay);
+	while((it+limit1)->read()==true){
+		(it+yDir)->write(true);
+		(it+yMotor)->write(true);
+		RIT_start(1, delay);
+		(it+yMotor)->write(false);
+		RIT_start(1, delay);
 	}
 
-//ENDS UP IN TOP LEFT CORNER
+//X+Y+
 
-	xSize = (topNum+bottomNum)/2;
-	ySize = (rightNum+leftNum)/2;
+	//X- till limit
+	vertical = false;
+	while ((it+limit3)->read()==false){
+		xSize++;
+		(it+xDir)->write(true);
+		RIT_start(2,delay);
+	}
+
+	//back-up to not hit the limit switch
+	while ((it+limit3)->read()==true){
+		(it+xDir)->write(false);
+		(it+xMotor)->write(true);
+		RIT_start(1, delay);
+		(it+xMotor)->write(false);
+		RIT_start(1, delay);
+		xSize--;
+	}
+
+	//Y- till limit
+	vertical = true;
+	while((it+limit2)->read()==false){
+		ySize++;
+		(it+yDir)->write(true);
+		RIT_start(2,delay);
+	}
+	//back-up to not hit the limit switch
+	while((it+limit2)->read()==true){
+		ySize--;
+		(it+yDir)->write(false);
+		(it+yMotor)->write(true);
+		RIT_start(1, delay);
+		(it+yMotor)->write(false);
+		RIT_start(1, delay);
+	}
+
+
+//ENDS UP AT (0,0)
+
+//	xSize = (topNum+bottomNum)/2;
+//	ySize = (rightNum+leftNum)/2;
 
 	char buffer[10];
 	int n;
@@ -529,34 +534,14 @@ static void vCalibrationTask(void *pvParameters) {
 	Board_UARTPutSTR(buffer);
 	n=sprintf(buffer, "Y: %d \r\n", ySize);
 	Board_UARTPutSTR(buffer);
-
+	xSize/=2;
+	ySize/=2;
 //	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
 	vTaskDelete(NULL);
 }
 
 /**/
-//static void vLimitsTask(void *pvParameters) {
-//	while(1){
-//		if((it+0)->write(true).read() == true || (it+1)->write(true).read() == true || (it+2)->write(true).read() == true || (it+3)->write(true).read() == true){
-//			while ((it+0)->write(true).read() == true){		//limit switch 1
-//				motor('D');
-//				vTaskDelay(delay);
-//			}
-//			while ((it+1)->write(true).read() == true){		//limit switch 2
-//				motor('U');
-//				vTaskDelay(delay);
-//			}
-//			while ((it+2)->write(true).read() == true){		//limit switch 3
-//				motor('L');
-//				vTaskDelay(delay);
-//			}
-//			while ((it+3)->write(true).read() == true){		//limit switch 4
-//				motor('R');
-//				vTaskDelay(delay);
-//			}
-//		}
-//	}
-//}
+
 /* Controller task for the motor
  * - Monitors a queue and take the values from there
  * - Calculate the ratios and send to Plot function to execute
@@ -588,12 +573,12 @@ static void vControllerTask(void *pvParameters) {
 			debugMsg = "";
 			//set the direction of the motor based on the value of x and y
 			if (x>=0)
-				(it+7)->write(true);
-			else (it+7)->write(false);
+				(it+xDir)->write(false);
+			else (it+xDir)->write(true);
 
 			if (y>=0)
-				(it+9)->write(true);
-			else (it+9)->write(false);
+				(it+yDir)->write(false);
+			else (it+yDir)->write(true);
 
 			//set the scaling value: detemining the steps/pixel ratio
 			x = xSize/380;
@@ -637,16 +622,16 @@ int main(void) {
 	/*Set up Pins*/
     DigitalIoPin limSW1(1, 3, DigitalIoPin::pullup, true);		//up
 	DigitalIoPin limSW2(0, 0, DigitalIoPin::pullup, true);		//down
-	DigitalIoPin limSW3(0, 29, DigitalIoPin::pullup, true);		//right
-	DigitalIoPin limSW4(0, 9, DigitalIoPin::pullup, true); 		//left
+	DigitalIoPin limSW3(0, 9, DigitalIoPin::pullup, true);		//right
+	DigitalIoPin limSW4(0, 29, DigitalIoPin::pullup, true); 		//left
 
     DigitalIoPin laser(0, 12, DigitalIoPin::output, true);		//laser
 	DigitalIoPin pen(0, 10, DigitalIoPin::output, true);		//pen
 
-	DigitalIoPin xMotor(0, 27, DigitalIoPin::output, true);		//horizontal movement
-	DigitalIoPin xDir(0, 28, DigitalIoPin::output, true);		//horizontal direction
-	DigitalIoPin yMotor(0, 24, DigitalIoPin::output, true);		//vertical movement
-	DigitalIoPin yDir(1, 0, DigitalIoPin::output, true);		//vertical direction
+	DigitalIoPin yMotor(0, 27, DigitalIoPin::output, true);		//horizontal movement
+	DigitalIoPin yDir(0, 28, DigitalIoPin::output, true);		//horizontal direction
+	DigitalIoPin xMotor(0, 24, DigitalIoPin::output, true);		//vertical movement
+	DigitalIoPin xDir(1, 0, DigitalIoPin::output, true);		//vertical direction
 
 	DigitalIoPin SW1(0, 8, DigitalIoPin::pullup, true);
 	DigitalIoPin SW2(1, 6, DigitalIoPin::pullup, true);
@@ -683,10 +668,6 @@ int main(void) {
 	xTaskCreate(vMotorYTask, "motorY",
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
-
-//	xTaskCreate(vLimitsTask, "limits",
-//				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
-//				(TaskHandle_t *) NULL);
 
 	xTaskCreate(vControllerTask, "controller",
 			    configMINIMAL_STACK_SIZE + 128 + 128, &args, (tskIDLE_PRIORITY + 1UL),
