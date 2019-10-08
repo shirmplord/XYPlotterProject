@@ -42,6 +42,8 @@ SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
 TaskHandle_t limitHandle = NULL;
+TaskHandle_t uartHandle = NULL;
+
 
 /*Declaration of data types*/
 struct Coordinates {
@@ -300,10 +302,10 @@ static void vUARTCommTask(void *pvParameters) {
 					std::string value = "";
 					value = value.append(GCode.begin()+3, GCode.end());
 					if (value == "160"){
-						LPC_SCT0->MATCHREL[1].L = 1600;	//down
+						LPC_SCT0->MATCHREL[1].L = 1600;	//up
 					}
 					else {
-						LPC_SCT0->MATCHREL[1].L = 1100;	//up
+						LPC_SCT0->MATCHREL[1].L = 1100;	//down
 					}
 					Board_UARTPutSTR("OK\r\n");
 				} else if(output == "M4"){		//set laser output
@@ -542,26 +544,13 @@ static void vLimitsTask(void *pvParameters) {
 	//args[1]	= Limit switch 2
 	//args[2]	= Limit switch 3
 	//args[3]	= Limit switch 4
-	int delay = 1;
 	while(1){
 		//suspend to not run when Calibration is running (resumed in Calibration)
 		vTaskSuspend(limitHandle);
 
-		while (args[0].read() == true){		//limit switch 1
-			motor('D');
-			vTaskDelay(delay);
-		}
-		while (args[1].read() == true){		//limit switch 2
-			motor('U');
-			vTaskDelay(delay);
-		}
-		while (args[2].read() == true){		//limit switch 3
-			motor('L');
-			vTaskDelay(delay);
-		}
-		while (args[3].read() == true){		//limit switch 4
-			motor('R');
-			vTaskDelay(delay);
+		if (args[0].read() == true || args[1].read() == true || args[2].read() == true || args[3].read() == true){		//limit switch 1
+			//suspend uart to stop
+			vTaskSuspend(uartHandle);
 		}
 	}
 }
@@ -683,7 +672,7 @@ int main(void) {
 
 	xTaskCreate(vUARTCommTask, "UART",
 			    configMINIMAL_STACK_SIZE * 2, NULL, (tskIDLE_PRIORITY + 1UL),
-				(TaskHandle_t *) NULL);
+				&uartHandle);
 
 	xTaskCreate(vMotorXTask, "motorX",
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
