@@ -41,7 +41,6 @@ SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direct
 SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
-//bool caliLock = true;
 TaskHandle_t limitHandle = NULL;
 
 /*Declaration of data types*/
@@ -532,7 +531,8 @@ static void vCalibrationTask(void *pvParameters) {
 	Board_UARTPutSTR(buffer);
 
 //	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
-	//caliLock = false;
+
+	//resuming the limit task
 	vTaskResume(limitHandle);
 	vTaskDelete(NULL);
 }
@@ -544,27 +544,25 @@ static void vLimitsTask(void *pvParameters) {
 	//args[3]	= Limit switch 4
 	int delay = 1;
 	while(1){
+		//suspend to not run when Calibration is running (resumed in Calibration)
 		vTaskSuspend(limitHandle);
 
-		//if(caliLock == false){
-		//if(args[0].read() == true || args[1].read() == true || args[2].read() == true || args[3].read() == true){
-			while (args[0].read() == true){		//limit switch 1
-				motor('D');
-				vTaskDelay(delay);
-			}
-			while (args[1].read() == true){		//limit switch 2
-				motor('U');
-				vTaskDelay(delay);
-			}
-			while (args[2].read() == true){		//limit switch 3
-				motor('L');
-				vTaskDelay(delay);
-			}
-			while (args[3].read() == true){		//limit switch 4
-				motor('R');
-				vTaskDelay(delay);
-			}
-		//}
+		while (args[0].read() == true){		//limit switch 1
+			motor('D');
+			vTaskDelay(delay);
+		}
+		while (args[1].read() == true){		//limit switch 2
+			motor('U');
+			vTaskDelay(delay);
+		}
+		while (args[2].read() == true){		//limit switch 3
+			motor('L');
+			vTaskDelay(delay);
+		}
+		while (args[3].read() == true){		//limit switch 4
+			motor('R');
+			vTaskDelay(delay);
+		}
 	}
 }
 
