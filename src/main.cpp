@@ -42,7 +42,6 @@ SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direct
 SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
-void motor(char);
 
 /*Declaration of data types*/
 struct Coordinates {
@@ -153,10 +152,10 @@ void PlotLineLowPositive(int x0, int y0, int x1, int y1) {
 
 	for (int i = x0;i < x1; i++) {
 		vertical = false;
-		RIT_start(1, delay);
+		RIT_start(2, delay);
 		if (D > 0) {
 			vertical = true;
-			RIT_start(1,delay);
+			RIT_start(2,delay);
 			D = D - 2*dx;
 		}
 		D = D + 2*dy;
@@ -173,10 +172,10 @@ void PlotLineLowNegative(int x0, int y0, int x1, int y1) {
 
 	for (int x = x0;x > x1; x--) {
 		vertical = false;
-		RIT_start(1, delay);
+		RIT_start(2, delay);
 		if (D > 0) {
 			vertical = true;
-			RIT_start(1,delay);
+			RIT_start(2,delay);
 			D = D - 2*dx;
 		}
 		D = D + 2*dy;
@@ -194,10 +193,10 @@ void plotLineHighPositive(int x0, int y0, int x1, int y1) {
 
 	for (int y = y0;y < y1; y++) {
 		vertical = true;
-		RIT_start(1, delay);
+		RIT_start(2, delay);
 		if (D > 0) {
 			vertical = false;
-			RIT_start(1,delay);
+			RIT_start(2,delay);
 			D = D - 2*dy;
 		}
 		D = D + 2*dx;
@@ -214,10 +213,10 @@ void plotLineHighNegative(int x0, int y0, int x1, int y1) {
 
 	for (int y = y0;y > y1; y--) {
 		vertical = true;
-		RIT_start(1, delay);
+		RIT_start(2, delay);
 		if (D > 0) {
 			vertical = false;
-			RIT_start(1,delay);
+			RIT_start(2, delay);
 			D = D - 2*dy;
 		}
 		D = D + 2*dx;
@@ -238,9 +237,45 @@ void Plot(int x0, int y0, int x, int y) {
 		}
 	}
 }
+/* Function used for CALIBRATION ONLY
+ * */
+void motor(char direction){
+	//args[6]	= xMotor
+	//args[7]	= xDir	= down-up
+	//args[8]	= yMotor
+	//args[9]	= yDir	= left-right
+
+	if (direction == 'R'){
+		args[8].write(false);	//yMotor
+		args[9].write(false);	//yDir
+		args[8].write(true);
+	}
+	else if (direction == 'D'){
+		args[6].write(false);	//xMotor
+		args[7].write(true);	//xDir
+		args[6].write(true);
+	}
+	else if (direction == 'L'){
+		args[8].write(false);	//yMotor
+		args[9].write(true);	//yDir
+		args[8].write(true);
+	}
+	else if (direction == 'U'){
+		args[6].write(false);	//xMotor
+		args[7].write(false);	//xDir
+		args[6].write(true);
+	}
+}
 /*-------------------------------------------------------------------*/
 /*Task declaration*/
 /*-------------------------------------------------------------------*/
+/* Task for UART communication
+ * - Take the GCode from the serial port sent by mDraw
+ * - Parse the Gcode and execute the commands accordingly
+ * 		- Send the reply on Information Querry
+ * 		- Set the pen to up/down (either directly or calling from another class)
+ * 		- Send the coordinate data (raw) to the queue for the controller
+ * */
 static void vUARTCommTask(void *pvParameters) {
 	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
 	auto it = arr->begin();
@@ -339,7 +374,10 @@ static void vUARTCommTask(void *pvParameters) {
 		}
 	}
 }
-
+/* Task for controlling the X direction motor
+ * Monitor a semaphore: xSignal
+ * Each call sends 1 pulse;
+ * */
 static void vMotorXTask(void *pvParameters) {
 	//ls3 = 2
 	//ls4 = 3
@@ -354,14 +392,16 @@ static void vMotorXTask(void *pvParameters) {
 		//normal movement used in the task
 		if (xSemaphoreTake(xSignal, portMAX_DELAY) == pdTRUE) {
 			if ((it+2)->read() == false && (it+3)->read() == false) {
-				/*LOOKING FOR CONDITION TO SELECT THE DIRECTION TO MOVE*/
 				(it+6)->write(signal);
 				signal = !signal;
 			}
 		}
 	}
 }
-
+/* Task for controlling the Y direction motor
+ * Monitor a semaphore: ySignal
+ * Each call sends 1 pulse;
+ * */
 static void vMotorYTask(void *pvParameters) {
 	//ls1 = 0
 	//ls2 = 1
@@ -376,17 +416,18 @@ static void vMotorYTask(void *pvParameters) {
 		//normal movement used in the task
 		if (xSemaphoreTake(ySignal, portMAX_DELAY) == pdTRUE) {
 			if ((it)->read() == false && (it+1)->read() == false) {
-				/*LOOKING FOR CONDITION TO SELECT THE DIRECTION TO MOVE*/
 				(it+8)->write(signal);
 				signal = !signal;
 			}
 		}
 	}
 }
-
+/* Calibration task. Called once and Deleted
+ * - Run to each Limit switch and record the number of steps
+ */
 static void vCalibrationTask(void *pvParameters) {
-	LPC_SCTLARGE0->MATCHREL[1].L = 1100;	//set pen down
-	//LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
+//	LPC_SCTLARGE0->MATCHREL[1].L = 1100;	//set pen down
+	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
 
 	//args[0]	= Limit switch 1	= up
 	//args[1]	= Limit switch 2	= down
@@ -489,60 +530,37 @@ static void vCalibrationTask(void *pvParameters) {
 	n=sprintf(buffer, "Y: %d \r\n", ySize);
 	Board_UARTPutSTR(buffer);
 
-	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
+//	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
 	vTaskDelete(NULL);
 }
-void motor(char direction){
-	//args[6]	= xMotor
-	//args[7]	= xDir	= down-up
-	//args[8]	= yMotor
-	//args[9]	= yDir	= left-right
 
-	if (direction == 'R'){
-		args[8].write(false);	//yMotor
-		args[9].write(false);	//yDir
-		args[8].write(true);
-	}
-	else if (direction == 'D'){
-		args[6].write(false);	//xMotor
-		args[7].write(true);	//xDir
-		args[6].write(true);
-	}
-	else if (direction == 'L'){
-		args[8].write(false);	//yMotor
-		args[9].write(true);	//yDir
-		args[8].write(true);
-	}
-	else if (direction == 'U'){
-		args[6].write(false);	//xMotor
-		args[7].write(false);	//xDir
-		args[6].write(true);
-	}
-}
-
-/*static void vLimitsTask(void *pvParameters) {
-	while(1){
-		if((it+0)->write(true).read() == true || (it+1)->write(true).read() == true || (it+2)->write(true).read() == true || (it+3)->write(true).read() == true){
-			while ((it+0)->write(true).read() == true){		//limit switch 1
-				motor('D');
-				vTaskDelay(delay);
-			}
-			while ((it+1)->write(true).read() == true){		//limit switch 2
-				motor('U');
-				vTaskDelay(delay);
-			}
-			while ((it+2)->write(true).read() == true){		//limit switch 3
-				motor('L');
-				vTaskDelay(delay);
-			}
-			while ((it+3)->write(true).read() == true){		//limit switch 4
-				motor('R');
-				vTaskDelay(delay);
-			}
-		}
-	}
-}*/
-
+/**/
+//static void vLimitsTask(void *pvParameters) {
+//	while(1){
+//		if((it+0)->write(true).read() == true || (it+1)->write(true).read() == true || (it+2)->write(true).read() == true || (it+3)->write(true).read() == true){
+//			while ((it+0)->write(true).read() == true){		//limit switch 1
+//				motor('D');
+//				vTaskDelay(delay);
+//			}
+//			while ((it+1)->write(true).read() == true){		//limit switch 2
+//				motor('U');
+//				vTaskDelay(delay);
+//			}
+//			while ((it+2)->write(true).read() == true){		//limit switch 3
+//				motor('L');
+//				vTaskDelay(delay);
+//			}
+//			while ((it+3)->write(true).read() == true){		//limit switch 4
+//				motor('R');
+//				vTaskDelay(delay);
+//			}
+//		}
+//	}
+//}
+/* Controller task for the motor
+ * - Monitors a queue and take the values from there
+ * - Calculate the ratios and send to Plot function to execute
+ * */
 static void vControllerTask(void *pvParameters) {
 	//xDir = 7
 	//yDir = 9
@@ -577,10 +595,11 @@ static void vControllerTask(void *pvParameters) {
 				(it+9)->write(true);
 			else (it+9)->write(false);
 
-//			x = round(xSize/380);
-//			y = round(ySize/310);
-			x=1;
-			y=1;
+			//set the scaling value: detemining the steps/pixel ratio
+			x = xSize/380;
+			y = ySize/310;
+//			x=1;
+//			y=1;
 			/*algorithm: Bresenham
 			 * - Determine either x or y is the running variable (the large of the 2)
 			 * - Based on the slope of the line (y-y0)/(x-x0),
@@ -588,7 +607,6 @@ static void vControllerTask(void *pvParameters) {
 			 * - Call RIT_start accordingly
 			 * */
 			Plot(round(cmd.currX * x), round(cmd.currY * y), round(cmd.tarX * x), round(cmd.tarY * y));
-
 			xSemaphoreGive(doneMoving);
 		}
 	}
@@ -597,7 +615,6 @@ static void vControllerTask(void *pvParameters) {
 /*-------------------------------------------------------------------*/
 /*Main function*/
 /*-------------------------------------------------------------------*/
-
 int main(void) {
     // TODO: insert code here
 	prvSetupHardware();
