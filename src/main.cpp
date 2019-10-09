@@ -35,8 +35,8 @@ volatile uint32_t RIT_count;		//counter for RITimer
 volatile bool vertical;
 int xSize = 0;
 int ySize = 0;
-int xSizemm = 310;
-int ySizemm = 380;
+int xSizemm = 390;	//310 in simulator
+int ySizemm = 430;	//380 in simulator
 
 SemaphoreHandle_t sbRIT = NULL;		//Semaphore for the RITimer
 SemaphoreHandle_t xSignal = NULL;  	//signal for the motor to move in the X direction
@@ -137,6 +137,7 @@ static void prvSetupHardware(void){
 
 	/* Initial LED0 state is off */
 	Board_LED_Set(0, false);
+	Chip_SWM_MovablePortPinAssign(SWM_SCT0_OUT0_O, 0, 10);	//pen
 }
 void SCT_Init(void){
 	Chip_SCT_Init(LPC_SCTLARGE0);
@@ -275,7 +276,6 @@ static void vUARTCommTask(void *pvParameters) {
     //Set the initial position to be at the top left
 	cmd.currX = 1;
 	cmd.currY = 1;
-	Chip_SWM_MovablePortPinAssign(SWM_SCT0_OUT0_O, 0, 10);	//pen
 	char buffer[50];	//used for printing
 
 	int penUpValue = 160;
@@ -300,10 +300,10 @@ static void vUARTCommTask(void *pvParameters) {
 					std::string value = "";
 					value = value.append(GCode.begin()+3, GCode.end());
 					if (value == std::to_string(penUpValue)){
-						LPC_SCT0->MATCHREL[1].L = 1600;	//up
+						LPC_SCT0->MATCHREL[1].L = 1100;	//up 1600 in simulator
 					}
 					else if (value == std::to_string(penDownValue)){
-						LPC_SCT0->MATCHREL[1].L = 1100;	//down
+						LPC_SCT0->MATCHREL[1].L = 1600;	//down 1100 in simulator
 					}
 					Board_UARTPutSTR("OK\r\n");
 				}
@@ -547,8 +547,7 @@ static void vMotorYTask(void *pvParameters) {
  * - Run to each Limit switch and record the number of steps
  */
 static void vCalibrationTask(void *pvParameters) {
-//	LPC_SCTLARGE0->MATCHREL[1].L = 1100;	//set pen down
-	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
+	LPC_SCTLARGE0->MATCHREL[1].L = 1100;	//set pen up
 
 	//Limit switch 1	= up
 	//Limit switch 2	= down
@@ -558,11 +557,8 @@ static void vCalibrationTask(void *pvParameters) {
 	auto it = arr->begin();
 
 	int delay = 50;
-	//start counters from 0
-	xSize = 0;
-	ySize = 0;
 
-	(it+pen)->write(false);	//laser
+	(it+laser)->write(false);	//laser
 	//Delay for laser to actually turn off
 	vTaskDelay(100);
 
@@ -766,8 +762,9 @@ int main(void) {
 				configMINIMAL_STACK_SIZE + 128, &args, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
 
+	//*4 enough in simulator, *10 in plotter
 	xTaskCreate(vUARTCommTask, "UART",
-			    configMINIMAL_STACK_SIZE * 4, NULL, (tskIDLE_PRIORITY + 1UL),
+			    configMINIMAL_STACK_SIZE * 8, NULL, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
 
 	xTaskCreate(vMotorXTask, "motorX",
