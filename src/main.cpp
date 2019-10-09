@@ -274,7 +274,7 @@ static void vUARTCommTask(void *pvParameters) {
     Coordinates cmd;
     //Set the initial position to be at the top left
 	cmd.currX = 1;
-	cmd.currY = 499;
+	cmd.currY = 1;
 	Chip_SWM_MovablePortPinAssign(SWM_SCT0_OUT0_O, 0, 10);	//pen
 	char buffer[50];	//used for printing
 
