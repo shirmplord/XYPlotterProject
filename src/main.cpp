@@ -29,6 +29,7 @@
 #include "DigitalIoPin.h"
 #include <vector>
 #include <cmath>
+#include "event_groups.h"
 
 /*Declaration of global variables*/
 volatile uint32_t RIT_count;		//counter for RITimer
@@ -44,6 +45,9 @@ SemaphoreHandle_t ySignal = NULL;	//signal for the motor to move in the Y direct
 SemaphoreHandle_t doneMoving = NULL;//signal to keep reading
 QueueHandle_t xCmdQueue;
 std::vector<DigitalIoPin> args;		//vector for the PINS
+EventGroupHandle_t lsFlags;
+TaskHandle_t UARTHandle;
+TaskHandle_t flagHandle;
 
 /*Declaration of data types*/
 struct Coordinates {
@@ -67,6 +71,11 @@ enum vctPos {	limit1,
 				sw2,
 				sw3
 			};
+
+#define BIT_0 (1 << 0)
+#define BIT_1 (1 << 1)
+#define BIT_2 (1 << 2)
+#define BIT_3 (1 << 3)
 /*-------------------------------------------------------------------*/
 /*Functions declaration*/
 /*-------------------------------------------------------------------*/
@@ -138,6 +147,8 @@ static void prvSetupHardware(void){
 	/* Initial LED0 state is off */
 	Board_LED_Set(0, false);
 	Chip_SWM_MovablePortPinAssign(SWM_SCT0_OUT0_O, 0, 10);	//pen
+
+	Board_LED_Set(0, false);
 }
 void SCT_Init(void){
 	Chip_SCT_Init(LPC_SCTLARGE0);
@@ -254,6 +265,7 @@ void Plot(int x0, int y0, int x, int y) {
 		}
 	}
 }
+
 /*-------------------------------------------------------------------*/
 /*Task declaration*/
 /*-------------------------------------------------------------------*/
@@ -288,22 +300,20 @@ static void vUARTCommTask(void *pvParameters) {
 	int yDirection = 0;
 	int plottingSpeed = 80;
 
+	vTaskSuspend(UARTHandle);
 	while (1) {
 		if ((ch = Board_UARTGetChar()) != EOF) {
 			if (ch == 10) {
 				std::string output(parser.Parse(GCode));
-//					Board_UARTPutSTR(GCode.c_str());
-//					Board_UARTPutSTR("\r\n");
-
 				//SET PEN POSITION
 				if(output == "M1"){
 					std::string value = "";
 					value = value.append(GCode.begin()+3, GCode.end());
 					if (value == std::to_string(penUpValue)){
-						LPC_SCT0->MATCHREL[1].L = 1100;	//up 1600 in simulator
+						LPC_SCT0->MATCHREL[1].L = 1100;				//up 1600 in simulator
 					}
 					else if (value == std::to_string(penDownValue)){
-						LPC_SCT0->MATCHREL[1].L = 1600;	//down 1100 in simulator
+						LPC_SCT0->MATCHREL[1].L = 1600;				//down 1100 in simulator
 					}
 					Board_UARTPutSTR("OK\r\n");
 				}
@@ -333,7 +343,6 @@ static void vUARTCommTask(void *pvParameters) {
 					penDownValue = atoi(dVal.c_str());
 					Board_UARTPutSTR("OK\r\n");
 				}
-
 				//SET LASER OUTPUT
 				else if(output == "M4"){
 					std::string value = "";
@@ -345,7 +354,7 @@ static void vUARTCommTask(void *pvParameters) {
 						(it+4)->write(false);
 					}
 					//small delay for the laser to turn off
-					vTaskDelay(500);
+					vTaskDelay(100);
 					Board_UARTPutSTR("OK\r\n");
 				}
 
@@ -401,7 +410,6 @@ static void vUARTCommTask(void *pvParameters) {
 
 					Board_UARTPutSTR("OK\r\n");
 				}
-
 				//SEND THE START UP REPLY
 				else if(output == "M10"){
 					//sprintf(buffer, "M10 XY 380 310 0.00 0.00 A0 B0 H0 S80 U160 D90\r\n");
@@ -415,22 +423,22 @@ static void vUARTCommTask(void *pvParameters) {
 				else if(output == "M11"){
 					//reply order: L4(left), L3(right), L2(down), L1(up)
 					//1 means open switch, 0 means closed
-					if(args[0].read()==true){	//limit switch 1
+					if((it+limit1)->read()==true){	//limit switch 1
 						ls1 = 0;
 					}else{
 						ls1 = 1;
 					}
-					if(args[1].read()==true){	//limit switch 2
+					if((it+limit2)->read()==true){	//limit switch 2
 						ls2 = 0;
 					}else{
 						ls2 = 1;
 					}
-					if(args[2].read()==true){	//limit switch 3
+					if((it+limit3)->read()==true){	//limit switch 3
 						ls3 = 0;
 					}else{
 						ls3 = 1;
 					}
-					if(args[3].read()==true){	//limit switch 4
+					if((it+limit4)->read()==true){	//limit switch 4
 						ls4 = 0;
 					}else{
 						ls4 = 1;
@@ -439,7 +447,6 @@ static void vUARTCommTask(void *pvParameters) {
 					Board_UARTPutSTR(buffer);
 					Board_UARTPutSTR("OK\r\n");
 				}
-
 				//GET COORDINATES
 				else if(output == "G1"){
 					std::string xVal = "";
@@ -549,102 +556,171 @@ static void vMotorYTask(void *pvParameters) {
 static void vCalibrationTask(void *pvParameters) {
 	LPC_SCTLARGE0->MATCHREL[1].L = 1100;	//set pen up
 
-	//Limit switch 1	= up
-	//Limit switch 2	= down
-	//Limit switch 3	= left
-	//Limit switch 4	= right
+    DigitalIoPin limSW1(1, 3, DigitalIoPin::pullup, true);		//up
+	DigitalIoPin limSW2(0, 0, DigitalIoPin::pullup, true);		//down
+	DigitalIoPin limSW3(0, 9, DigitalIoPin::pullup, true);		//right
+	DigitalIoPin limSW4(0, 29, DigitalIoPin::pullup, true); 	//left
+
 	std::vector<DigitalIoPin> *arr = static_cast<std::vector<DigitalIoPin>*>(pvParameters);
 	auto it = arr->begin();
-
 	int delay = 50;
+	int count = 0;
 
 	(it+laser)->write(false);	//laser
 	//Delay for laser to actually turn off
 	vTaskDelay(100);
-
-	//X+ until limit
-	vertical = false;
-	while ((it+limit4)->read()==false){
-		(it+xDir)->write(false);
-		RIT_start(2,delay);
+	/* Calibration plan:
+	 * - Runs in the circle: +X +Y -X -Y
+	 * - Counter with increment value 0 -> 4 (the number of switches read)
+	 * - When a switch is read, change the value in the vector based on what we have
+	 * - When a switch is read, it changes a bit in the event group
+	 * - Clear bit on every cycle
+	 * */
+	while (1) {
+		EventBits_t uxBits = xEventGroupGetBits(lsFlags);
+		switch (count) {
+		case 0:										//no switches hit, +X, expecting Limit 4
+			if ((uxBits & 0x0F) == 0) {	//& 0x0F == 0 meaning no bit were set
+				vertical = false;
+				(it+xDir)->write(true);
+				RIT_start(2,delay);
+			} else
+			if (((uxBits & 0x0F) != 0)) {			//(at least) 1 bit is set but the switch is not saved
+				if ((uxBits & BIT_0) == BIT_0) {	//find out which switch is hit
+					*(it+limit4) = limSW1;
+				}
+				if ((uxBits & BIT_1) == BIT_1) {
+					*(it+limit4) = limSW2;
+				}
+				if ((uxBits & BIT_2) == BIT_2) {
+					*(it+limit4) = limSW3;
+				}
+				if ((uxBits & BIT_3) == BIT_3) {
+					*(it+limit4) = limSW4;
+				}
+				while ((it+limit4)->read() == true) {
+					(it+xDir)->write(false);				//Move back to not hit the switch anymore
+					(it+xMotor)->write(true);
+					RIT_start(1, delay);
+					(it+xMotor)->write(false);
+					RIT_start(1, delay);
+				}
+				xEventGroupClearBits(lsFlags, 0x0F);//clear the bits
+				count++;
+			}
+			break;
+		case 1:										//1 switch found, +Y, expecting Limit 2
+			if ((uxBits & 0x0F) == 0) {	//& 0x0F == 0 meaning no bit were set
+				vertical = true;
+				(it+yDir)->write(true);
+				RIT_start(2,delay);
+			} else
+			if (((uxBits & 0x0F) != 0)) {			//(at least) 1 bit is set but the switch is not saved
+				if ((uxBits & BIT_0) == BIT_0) {	//find out which switch is hit
+					*(it+limit2) = limSW1;
+				}
+				if ((uxBits & BIT_1) == BIT_1) {
+					*(it+limit2) = limSW2;
+				}
+				if ((uxBits & BIT_2) == BIT_2) {
+					*(it+limit2) = limSW3;
+				}
+				if ((uxBits & BIT_3) == BIT_3) {
+					*(it+limit2) = limSW4;
+				}
+				while ((it+limit2)->read()) {
+					(it+yDir)->write(false);				//Move back to not hit the switch anymore
+					(it+yMotor)->write(true);
+					RIT_start(1, delay);
+					(it+yMotor)->write(false);
+					RIT_start(1, delay);
+				}
+				xEventGroupClearBits(lsFlags, 0x0F);//clear the bits
+				count++;
+			}
+			break;
+		case 2:										//2 switches found, -X expecting Limit 3
+			if ((uxBits & 0x0F) == 0) {	//& 0x0F == 0 meaning no bit were set
+				xSize++;
+				vertical = false;
+				(it+xDir)->write(false);
+				RIT_start(2,delay);
+			} else
+			if (((uxBits & 0x0F) != 0)) {			//(at least) 1 bit is set but the switch is not saved
+				if ((uxBits & BIT_0) == BIT_0) {	//find out which switch is hit
+					*(it+limit3) = limSW1;
+				}
+				if ((uxBits & BIT_1) == BIT_1) {
+					*(it+limit3) = limSW2;
+				}
+				if ((uxBits & BIT_2) == BIT_2) {
+					*(it+limit3) = limSW3;
+				}
+				if ((uxBits & BIT_3) == BIT_3) {
+					*(it+limit3) = limSW4;
+				}
+				while ((it+limit3)->read() == true) {
+					xSize--;
+					(it+xDir)->write(true);				//Move back to not hit the switch anymore
+					(it+xMotor)->write(true);
+					RIT_start(1, delay);
+					(it+xMotor)->write(false);
+					RIT_start(1, delay);
+				}
+				xEventGroupClearBits(lsFlags, 0x0F);//clear the bits
+				count++;
+			}
+			break;
+		case 3:										//3 switches found, -Y, expecting Limit 1
+			if ((uxBits & 0x0F) == 0) {	//& 0x0F == 0 meaning no bit were set
+				ySize++;
+				vertical = true;
+				(it+yDir)->write(false);
+				RIT_start(2,delay);
+			} else
+			if (((uxBits & 0x0F) != 0)) {			//(at least) 1 bit is set but the switch is not saved
+				if ((uxBits & BIT_0) == BIT_0) {	//find out which switch is hit
+					*(it+limit1) = limSW1;
+				}
+				if ((uxBits & BIT_1) == BIT_1) {
+					*(it+limit1) = limSW2;
+				}
+				if ((uxBits & BIT_2) == BIT_2) {
+					*(it+limit1) = limSW3;
+				}
+				if ((uxBits & BIT_3) == BIT_3) {
+					*(it+limit1) = limSW4;
+				}
+				while ((it+limit1)->read() == true) {
+					ySize--;
+					(it+yDir)->write(true);				//Move back to not hit the switch anymore
+					(it+yMotor)->write(true);
+					RIT_start(1, delay);
+					(it+yMotor)->write(false);
+					RIT_start(1, delay);
+				}
+				xEventGroupClearBits(lsFlags, 0x0F);//clear the bits
+				count++;
+			}
+			break;
+		case 4:										//all limit switches found
+			xSize/=2;
+			ySize/=2;
+			char buffer[10];
+			int n;
+			n=sprintf(buffer, "X: %d \r\n", xSize);
+			Board_UARTPutSTR(buffer);
+			n=sprintf(buffer, "Y: %d \r\n", ySize);
+			Board_UARTPutSTR(buffer);
+			vTaskSuspend(flagHandle);
+			vTaskResume(UARTHandle);
+			vTaskDelete(flagHandle);
+			vTaskDelete(NULL);
+			break;
+		}
 	}
-	//back-up to not hit the limit switch
-	while ((it+limit4)->read()==true){		//Do not use the motor task since it won't run when limit switches are read
-		(it+xDir)->write(true);
-		(it+xMotor)->write(true);
-		RIT_start(1, delay);
-		(it+xMotor)->write(false);
-		RIT_start(1, delay);
-	}
-	//Y+ until limit
-	vertical = true;
-	while((it+limit1)->read()==false){
-		(it+yDir)->write(false);
-		RIT_start(2,delay);
-	}
-	//back-up to not hit the limit switch
-	while((it+limit1)->read()==true){
-		(it+yDir)->write(true);
-		(it+yMotor)->write(true);
-		RIT_start(1, delay);
-		(it+yMotor)->write(false);
-		RIT_start(1, delay);
-	}
-
-//X+Y+
-
-	//X- till limit
-	vertical = false;
-	while ((it+limit3)->read()==false){
-		xSize++;
-		(it+xDir)->write(true);
-		RIT_start(2,delay);
-	}
-
-	//back-up to not hit the limit switch
-	while ((it+limit3)->read()==true){
-		(it+xDir)->write(false);
-		(it+xMotor)->write(true);
-		RIT_start(1, delay);
-		(it+xMotor)->write(false);
-		RIT_start(1, delay);
-		xSize--;
-	}
-
-	//Y- till limit
-	vertical = true;
-	while((it+limit2)->read()==false){
-		ySize++;
-		(it+yDir)->write(true);
-		RIT_start(2,delay);
-	}
-	//back-up to not hit the limit switch
-	while((it+limit2)->read()==true){
-		ySize--;
-		(it+yDir)->write(false);
-		(it+yMotor)->write(true);
-		RIT_start(1, delay);
-		(it+yMotor)->write(false);
-		RIT_start(1, delay);
-	}
-
-
 //ENDS UP AT (0,0)
-
-//	xSize = (topNum+bottomNum)/2;
-//	ySize = (rightNum+leftNum)/2;
-	xSize/=2;
-	ySize/=2;
-	char buffer[10];
-	int n;
-	n=sprintf(buffer, "X: %d \r\n", xSize);
-	Board_UARTPutSTR(buffer);
-	n=sprintf(buffer, "Y: %d \r\n", ySize);
-	Board_UARTPutSTR(buffer);
-
 //	LPC_SCTLARGE0->MATCHREL[1].L = 1600;	//set pen up
-
-	vTaskDelete(NULL);
 }
 
 /* Controller task for the motor
@@ -678,12 +754,12 @@ static void vControllerTask(void *pvParameters) {
 			debugMsg = "";
 			//set the direction of the motor based on the value of x and y
 			if (x>=0)
-				(it+xDir)->write(false);
-			else (it+xDir)->write(true);
+				(it+xDir)->write(true);
+			else (it+xDir)->write(false);
 
 			if (y>=0)
-				(it+yDir)->write(false);
-			else (it+yDir)->write(true);
+				(it+yDir)->write(true);
+			else (it+yDir)->write(false);
 
 			//set the scaling value: determining the steps/pixel ratio
 			x = xSize/xSizemm;
@@ -699,6 +775,21 @@ static void vControllerTask(void *pvParameters) {
 			Plot(round(cmd.currX * x), round(cmd.currY * y), round(cmd.tarX * x), round(cmd.tarY * y));
 			xSemaphoreGive(doneMoving);
 		}
+	}
+}
+
+static void vSetLsFlagTask(void *pvParameters) {
+    DigitalIoPin limSW1(1, 3, DigitalIoPin::pullup, true);		//up
+	DigitalIoPin limSW2(0, 0, DigitalIoPin::pullup, true);		//down
+	DigitalIoPin limSW3(0, 9, DigitalIoPin::pullup, true);		//right
+	DigitalIoPin limSW4(0, 29, DigitalIoPin::pullup, true); 	//left
+
+	while (1) {
+		if (limSW1.read()) xEventGroupSetBits(lsFlags, BIT_0);
+		else if (limSW2.read()) xEventGroupSetBits(lsFlags, BIT_1);
+		else if (limSW3.read()) xEventGroupSetBits(lsFlags, BIT_2);
+		else if (limSW4.read()) xEventGroupSetBits(lsFlags, BIT_3);
+		vTaskDelay(50);
 	}
 }
 
@@ -722,13 +813,20 @@ int main(void) {
 	doneMoving = xSemaphoreCreateBinary();
 	xCmdQueue = xQueueCreate(20, sizeof(Coordinates));
 
+	/*Set up the event group*/
+	lsFlags = xEventGroupCreate();
+
 	vQueueAddToRegistry(xCmdQueue, "coordinates");
+	vQueueAddToRegistry(xSignal, "xSignal");
+	vQueueAddToRegistry(ySignal, "ySignal");
+	vQueueAddToRegistry(doneMoving, "take me to UARt");
+
 
 	/*Set up Pins*/
     DigitalIoPin limSW1(1, 3, DigitalIoPin::pullup, true);		//up
 	DigitalIoPin limSW2(0, 0, DigitalIoPin::pullup, true);		//down
 	DigitalIoPin limSW3(0, 9, DigitalIoPin::pullup, true);		//right
-	DigitalIoPin limSW4(0, 29, DigitalIoPin::pullup, true); 		//left
+	DigitalIoPin limSW4(0, 29, DigitalIoPin::pullup, true); 	//left
 
     DigitalIoPin laser(0, 12, DigitalIoPin::output, true);		//laser
 	DigitalIoPin pen(0, 10, DigitalIoPin::output, true);		//pen
@@ -765,7 +863,7 @@ int main(void) {
 	//*4 enough in simulator, *10 in plotter
 	xTaskCreate(vUARTCommTask, "UART",
 			    configMINIMAL_STACK_SIZE * 8, NULL, (tskIDLE_PRIORITY + 1UL),
-				(TaskHandle_t *) NULL);
+				(TaskHandle_t *) &UARTHandle);
 
 	xTaskCreate(vMotorXTask, "motorX",
 				configMINIMAL_STACK_SIZE, &args, (tskIDLE_PRIORITY + 1UL),
@@ -778,6 +876,10 @@ int main(void) {
 	xTaskCreate(vControllerTask, "controller",
 			    configMINIMAL_STACK_SIZE + 128 + 128, &args, (tskIDLE_PRIORITY + 1UL),
 				(TaskHandle_t *) NULL);
+
+	xTaskCreate(vSetLsFlagTask, "setFlag",
+				configMINIMAL_STACK_SIZE + 128, NULL, (tskIDLE_PRIORITY + 1UL),
+				(TaskHandle_t *) &flagHandle);
 
 	/*Call the preparation functions*/
 
